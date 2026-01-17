@@ -13,6 +13,7 @@ import {
 import { useIdleChecker } from "./hooks/useIdleChecker";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
+import { TimerControls } from "./components/TimerControls";
 import "./App.css";
 
 type Tab = "status" | "settings";
@@ -64,7 +65,12 @@ function App() {
       </nav>
 
       <div className="app__content">
-        {activeTab === "status" && <StatusIndicator status={idleStatus} />}
+        {activeTab === "status" && (
+          <>
+            <StatusIndicator status={idleStatus} />
+            <TimerControls status={idleStatus} />
+          </>
+        )}
         {activeTab === "settings" && (
           <Settings onSave={() => setActiveTab("status")} />
         )}

@@ -86,6 +86,114 @@ impl RunningTimeEntry {
     }
 }
 
+
+/// A ClickUp task search result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskSearchResult {
+    pub id: String,
+    pub name: String,
+    pub custom_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskSearchResponse {
+    tasks: Vec<TaskSearchResult>,
+}
+
+/// Search for tasks in a workspace.
+pub async fn search_tasks(
+    api_key: String,
+    team_id: String,
+    query: String,
+) -> Result<Vec<TaskSearchResult>, String> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/task",
+        team_id
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .query(&[("search", query), ("page", "0".to_string())])
+        .send()
+        .await
+        .map_err(|e| format!("Failed to search tasks: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error ({}): {}", status, body));
+    }
+
+    let search_response: TaskSearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    Ok(search_response.tasks)
+}
+
+/// Start a time entry for a specific task.
+pub async fn start_timer(
+    api_key: String,
+    team_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/start",
+        team_id
+    );
+
+    let body = serde_json::json!({
+        "tid": task_id
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to start timer: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error ({}): {}", status, body));
+    }
+
+    Ok(())
+}
+
+/// Stop the currently running timer.
+pub async fn stop_timer(api_key: String, team_id: String) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/stop",
+        team_id
+    );
+
+    let response = client
+        .post(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to stop timer: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error ({}): {}", status, body));
+    }
+
+    Ok(())
+}
+
 /// Check idle time and stop ClickUp timer if user has been idle too long.
 ///
 /// # Arguments

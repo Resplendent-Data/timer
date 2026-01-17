@@ -48,6 +48,8 @@ export interface IdleStatus {
   error: string | null;
   /** Last time we sent a "no timer" warning */
   lastNoTimerWarningAt: Date | null;
+  /** Function to manually refresh the status */
+  refresh: () => Promise<void>;
 }
 
 /**
@@ -72,6 +74,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     lastStoppedTaskName: null,
     error: null,
     lastNoTimerWarningAt: null,
+    refresh: async () => {},
   });
 
   const checkIdle = useCallback(async () => {
@@ -242,7 +245,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     };
   }, [checkIdle, checkIntervalMs]);
 
-  return status;
+  return { ...status, refresh: checkIdle };
 }
 
 /**

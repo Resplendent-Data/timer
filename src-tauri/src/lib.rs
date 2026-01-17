@@ -7,13 +7,39 @@ mod clickup;
 mod idle;
 mod idle_monitor;
 
-use clickup::{IdleCheckResult, RunningTimerInfo};
+use clickup::{IdleCheckResult, RunningTimerInfo, TaskSearchResult};
 use tauri::{
     include_image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+
+/// Tauri command to search for tasks.
+#[tauri::command]
+async fn search_tasks(
+    api_key: String,
+    team_id: String,
+    query: String,
+) -> Result<Vec<TaskSearchResult>, String> {
+    clickup::search_tasks(api_key, team_id, query).await
+}
+
+/// Tauri command to start a timer for a task.
+#[tauri::command]
+async fn start_timer(
+    api_key: String,
+    team_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    clickup::start_timer(api_key, team_id, task_id).await
+}
+
+/// Tauri command to stop the current timer.
+#[tauri::command]
+async fn stop_timer(api_key: String, team_id: String) -> Result<(), String> {
+    clickup::stop_timer(api_key, team_id).await
+}
 
 /// Tauri command to check idle time and stop ClickUp timer if needed.
 ///
@@ -146,6 +172,9 @@ pub fn run() {
             get_running_timer,
             get_running_timer_info,
             debug_clickup_api,
+            search_tasks,
+            start_timer,
+            stop_timer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
