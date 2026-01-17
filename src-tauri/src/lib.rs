@@ -9,6 +9,7 @@ mod idle_monitor;
 
 use clickup::{IdleCheckResult, RunningTimerInfo};
 use tauri::{
+    include_image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
@@ -88,9 +89,12 @@ pub fn run() {
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
+            // Load the transparent tray icon (embedded at compile time)
+            let tray_icon = include_image!("icons/tray-icon.png");
+
             // Build the system tray
             let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
