@@ -1,6 +1,6 @@
 # Resplendent Timer
 
-A cross-platform desktop application that monitors user idle time and automatically stops ClickUp timers when you're away.
+A desktop application that monitors user idle time and automatically stops ClickUp timers when you're away.
 
 ## Features
 
@@ -8,7 +8,6 @@ A cross-platform desktop application that monitors user idle time and automatica
 - **No timer warning**: Optionally get notified when you've been active without a timer running
 - **Real-time display**: Shows current idle time and elapsed time on running timers
 - **System tray**: Minimizes to system tray for background monitoring
-- **Cross-platform**: Works on macOS, Windows, and Linux
 
 ## Installation
 
@@ -21,13 +20,6 @@ A cross-platform desktop application that monitors user idle time and automatica
 5. Grant notification permissions when prompted
 
 **Note**: The app is not code-signed, so you may need to allow it in System Settings > Privacy & Security.
-
-### Windows
-
-1. Download the latest `.msi` installer from the [Releases](https://github.com/Resplendent-Data/timer/releases) page
-2. Run the installer and follow the prompts
-3. Launch "Resplendent Timer" from the Start menu
-4. Allow notifications when prompted
 
 ### Linux
 
@@ -98,7 +90,6 @@ Build artifacts will be in `src-tauri/target/release/bundle/`.
 - **Backend**: Rust, Tauri v2
 - **Idle Detection**: 
   - macOS: IOKit (HIDIdleTime)
-  - Windows: Win32 API (GetLastInputInfo)
   - Linux: D-Bus (GNOME/KDE) with X11 fallback
 
 ## License
