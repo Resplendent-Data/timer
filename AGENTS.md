@@ -1,7 +1,7 @@
 # AGENTS.md - Coding Agent Guidelines
 
-This is a Tauri v2 desktop application with a React/TypeScript frontend and Rust backend.
-It monitors user idle time and integrates with ClickUp to auto-stop timers.
+Tauri v2 desktop app with React/TypeScript frontend and Rust backend.
+Monitors user idle time and integrates with ClickUp to auto-stop timers.
 
 ## Project Structure
 
@@ -12,7 +12,7 @@ src/                    # React/TypeScript frontend
   lib/                  # Utilities (store, etc.)
 src-tauri/              # Rust backend
   src/
-    idle/               # Platform-specific idle detection
+    idle/               # Platform-specific idle detection (macos.rs, linux.rs)
     clickup.rs          # ClickUp API integration
     idle_monitor.rs     # Unified idle detection interface
     lib.rs              # Tauri commands and app setup
@@ -20,56 +20,36 @@ src-tauri/              # Rust backend
 
 ## Build & Development Commands
 
-### Frontend (TypeScript/React)
 ```bash
+# Frontend
 npm install             # Install dependencies
-npm run dev             # Start Vite dev server only
-npm run build           # TypeScript check + Vite production build
-```
+npm run dev             # Vite dev server only
+npm run build           # TypeScript check + Vite build
+npx tsc --noEmit        # Type check only
 
-### Full App (Tauri)
-```bash
-npm run tauri dev       # Development mode with hot reload
-npm run tauri build     # Production build (creates .app/.dmg/.exe)
-```
+# Full App (Tauri)
+npm run tauri dev       # Development with hot reload
+npm run tauri build     # Production build (.app/.dmg)
 
-### Rust Backend
-```bash
-cd src-tauri
+# Rust Backend (run from src-tauri/)
 cargo build             # Debug build
-cargo build --release   # Release build
 cargo check             # Fast type checking
 cargo clippy            # Linting
 cargo fmt               # Format code
 ```
 
-### Running Tests
+## Running Tests
 
-**Run all Rust tests:**
 ```bash
-cd src-tauri && cargo test
+cd src-tauri && cargo test                                    # All tests
+cd src-tauri && cargo test test_idle_check_result_serialization  # Single test
+cd src-tauri && cargo test clickup::tests                     # Module tests
+cd src-tauri && cargo test -- --nocapture                     # With output
 ```
 
-**Run a single Rust test:**
-```bash
-cd src-tauri && cargo test test_idle_check_result_serialization
-```
+## Code Style - TypeScript/React
 
-**Run tests in a specific module:**
-```bash
-cd src-tauri && cargo test clickup::tests
-```
-
-**TypeScript type checking:**
-```bash
-npx tsc --noEmit
-```
-
-## Code Style Guidelines
-
-### TypeScript/React
-
-**Imports** - Order: React, external packages, internal modules, relative imports
+**Import Order:** React → external packages → internal modules → relative imports
 ```typescript
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -77,21 +57,20 @@ import { getSettings } from "../lib/store";
 ```
 
 **Naming:**
-- Components: `PascalCase` (`StatusIndicator`, `Settings`)
-- Hooks: `camelCase` with `use` prefix (`useIdleChecker`, `useIdleTime`)
-- Interfaces: `PascalCase` (`IdleStatus`, `AppSettings`)
-- Variables/functions: `camelCase`
-- CSS classes: BEM notation (`status-indicator__value--active`)
+- Components: `PascalCase` (`StatusIndicator`)
+- Hooks: `camelCase` with `use` prefix (`useIdleChecker`)
+- Interfaces: `PascalCase` (`IdleStatus`)
+- CSS classes: BEM (`status-indicator__value--active`)
 
 **Types:**
-- Always define interfaces for component props
-- Use explicit return types for hooks
-- Match Rust snake_case in API response interfaces (`task_name`, not `taskName`)
+- Define interfaces for all component props
+- Explicit return types for hooks
+- Match Rust snake_case in API responses (`task_name`, not `taskName`)
 
 **Components:**
-- Use function components with hooks
+- Function components with hooks only
 - JSDoc comment at top describing purpose
-- Export named functions, not default exports
+- Named exports, not default exports
 
 **Error Handling:**
 ```typescript
@@ -103,12 +82,13 @@ try {
 }
 ```
 
-### Rust
+## Code Style - Rust
 
-**Imports** - Order: std, external crates, internal modules
+**Import Order:** std → external crates → internal modules
 ```rust
-use crate::idle_monitor;
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use crate::idle_monitor;
 ```
 
 **Naming:**
@@ -117,42 +97,32 @@ use serde::{Deserialize, Serialize};
 - Functions: `snake_case` (`get_idle_time_secs`)
 - Constants: `SCREAMING_SNAKE_CASE`
 
-**Documentation:**
-- Module-level `//!` doc comments
-- Function `///` doc comments with `# Arguments` and `# Returns` sections
-- Inline comments for non-obvious logic
-
-**Structs:**
-- Derive `Debug, Clone, Serialize, Deserialize` for API types
-- Use `#[serde(default)]` for optional API fields
-- Document each field with `///`
-
-**Tauri Commands:**
+**Structs:** Derive `Debug, Clone, Serialize, Deserialize` for API types
 ```rust
-/// Brief description of what this command does.
-///
-/// # Arguments
-/// * `param` - Description
-///
-/// # Returns
-/// Description of return value
-#[tauri::command]
-async fn command_name(param: String) -> Result<ReturnType, String> {
-    // Implementation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdleCheckResult {
+    /// Whether a timer was stopped
+    pub stopped: bool,
+    #[serde(default)]
+    pub task_name: Option<String>,
 }
 ```
 
-**Error Handling:**
-- Return `Result<T, String>` from Tauri commands
-- Use `.map_err(|e| format!("Context: {}", e))?` for error propagation
-- Include context in error messages
+**Tauri Commands:**
+```rust
+/// Brief description.
+#[tauri::command]
+async fn command_name(param: String) -> Result<ReturnType, String> {
+    do_something().map_err(|e| format!("Context: {}", e))?;
+    Ok(result)
+}
+```
+
+**Error Handling:** Return `Result<T, String>` from commands, add context to errors
 
 **Platform-Specific Code:**
 ```rust
 #[cfg(target_os = "macos")]
-pub async fn get_idle_secs() -> Result<u64, String> { ... }
-
-#[cfg(target_os = "linux")]
 pub async fn get_idle_secs() -> Result<u64, String> { ... }
 ```
 
@@ -161,48 +131,34 @@ pub async fn get_idle_secs() -> Result<u64, String> { ... }
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_descriptive_name() {
-        // Arrange
-        // Act
-        // Assert
-    }
+    fn test_descriptive_name() { /* Arrange, Act, Assert */ }
 }
 ```
 
 ## Key Patterns
 
-### Tauri Command Flow
-1. Define async function with `#[tauri::command]`
+**Tauri Command Flow:**
+1. Define async fn with `#[tauri::command]` in Rust
 2. Register in `invoke_handler` in `lib.rs`
-3. Call from frontend with `invoke<ReturnType>("command_name", { args })`
+3. Call from frontend: `invoke<ReturnType>("command_name", { args })`
 
-### Adding New Features
-1. **Rust side:** Add function in appropriate module, expose via Tauri command
-2. **Frontend side:** Create interface matching Rust struct, call via `invoke`
-3. Types must match: Rust `snake_case` fields = TS interface `snake_case` fields
+**Adding Features:**
+1. Rust: Add function, expose via Tauri command
+2. Frontend: Create interface matching Rust struct, call via `invoke`
+3. Types must match: Rust `snake_case` = TS `snake_case` (not camelCase)
 
-### State Management
-- Use React hooks for component state
-- Use `tauri-plugin-store` for persistent settings
-- No global state library; prop drilling is acceptable for this app size
+**State Management:**
+- React hooks for component state
+- `tauri-plugin-store` for persistent settings (see `lib/store.ts`)
+- No global state library needed
 
 ## Platform Notes
 
-- **macOS:** Uses IOKit `HIDIdleTime` for idle detection
-- **Linux:** Tries GNOME DBus → KDE DBus → X11 XScreenSaver (fallback chain)
-- **Windows:** Uses `GetLastInputInfo` Win32 API
+- **macOS:** IOKit `HIDIdleTime` for idle detection, overlay title bar style
+- **Linux:** GNOME DBus → KDE DBus → X11 XScreenSaver fallback chain
 
-## Dependencies to Know
+## Key Dependencies
 
-**Rust:**
-- `tauri` v2 - App framework
-- `reqwest` - HTTP client for ClickUp API
-- `serde` - Serialization
-- `tokio` - Async runtime
-
-**TypeScript:**
-- `@tauri-apps/api` - Invoke Rust commands
-- `@tauri-apps/plugin-*` - Tauri plugins (store, notification)
-- React 19 with hooks
+**Rust:** tauri v2, reqwest, serde, tokio
+**TypeScript:** @tauri-apps/api, @tauri-apps/plugin-store, @tauri-apps/plugin-notification, React 19
