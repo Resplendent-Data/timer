@@ -1,0 +1,202 @@
+/**
+ * React hook for monitoring user idle time and managing ClickUp timers.
+ *
+ * This hook runs a background check every minute to:
+ * 1. Get the current idle time from the Rust backend
+ * 2. If idle exceeds threshold, stop any running ClickUp timer
+ * 3. Show a notification when a timer is stopped
+ */
+
+import { useEffect, useRef, useCallback, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
+import { getSettings } from "../lib/store";
+
+/** Result returned from the Rust check_and_stop_timer command */
+interface IdleCheckResult {
+  stopped: boolean;
+  task_name: string | null;
+  idle_duration: number;
+  error: string | null;
+}
+
+/** Info about the running timer from Rust */
+interface RunningTimerInfo {
+  name: string;
+  start_time_ms: number;
+}
+
+/** Current status of the idle checker */
+export interface IdleStatus {
+  /** Whether the checker is running */
+  isRunning: boolean;
+  /** Current idle time in seconds */
+  currentIdleSeconds: number;
+  /** Name of the currently running task (if any) */
+  runningTaskName: string | null;
+  /** Start time of the running timer (for elapsed time calculation) */
+  runningTaskStartMs: number | null;
+  /** Last time a timer was stopped */
+  lastStoppedAt: Date | null;
+  /** Last stopped task name */
+  lastStoppedTaskName: string | null;
+  /** Error message if something went wrong */
+  error: string | null;
+}
+
+/**
+ * Hook that monitors idle time and automatically stops ClickUp timers.
+ *
+ * @param checkIntervalMs - How often to check idle time (default: 60000ms = 1 minute)
+ * @returns Current idle status
+ */
+export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
+  const intervalRef = useRef<number | null>(null);
+  const [status, setStatus] = useState<IdleStatus>({
+    isRunning: false,
+    currentIdleSeconds: 0,
+    runningTaskName: null,
+    runningTaskStartMs: null,
+    lastStoppedAt: null,
+    lastStoppedTaskName: null,
+    error: null,
+  });
+
+  const checkIdle = useCallback(async () => {
+    try {
+      const settings = await getSettings();
+
+      if (!settings) {
+        setStatus((prev) => ({
+          ...prev,
+          error: "Not configured. Please add your ClickUp settings.",
+        }));
+        return;
+      }
+
+      // Calculate threshold in seconds
+      const thresholdSecs = settings.idleThresholdMinutes * 60;
+
+      // Call Rust backend to check idle and potentially stop timer
+      const result = await invoke<IdleCheckResult>("check_and_stop_timer", {
+        apiKey: settings.clickupApiKey,
+        teamId: settings.clickupTeamId,
+        idleThresholdSecs: thresholdSecs,
+      });
+
+      // Update status with current idle time
+      setStatus((prev) => ({
+        ...prev,
+        isRunning: true,
+        currentIdleSeconds: result.idle_duration,
+        error: result.error,
+      }));
+
+      // If a timer was stopped, show notification and update state
+      if (result.stopped && result.task_name) {
+        // Check and request notification permission
+        let permissionGranted = await isPermissionGranted();
+        if (!permissionGranted) {
+          const permission = await requestPermission();
+          permissionGranted = permission === "granted";
+        }
+
+        if (permissionGranted) {
+          const idleMinutes = Math.floor(result.idle_duration / 60);
+          sendNotification({
+            title: "Timer Stopped",
+            body: `Timer stopped due to inactivity on "${result.task_name}" (idle for ${idleMinutes} minutes)`,
+          });
+        }
+
+        setStatus((prev) => ({
+          ...prev,
+          lastStoppedAt: new Date(),
+          lastStoppedTaskName: result.task_name,
+          runningTaskName: null,
+          runningTaskStartMs: null,
+        }));
+      }
+
+      // Also fetch current running timer info for display
+      if (!result.stopped) {
+        try {
+          const timerInfo = await invoke<RunningTimerInfo | null>(
+            "get_running_timer_info",
+            {
+              apiKey: settings.clickupApiKey,
+              teamId: settings.clickupTeamId,
+            }
+          );
+          setStatus((prev) => ({
+            ...prev,
+            runningTaskName: timerInfo?.name ?? null,
+            runningTaskStartMs: timerInfo?.start_time_ms ?? null,
+          }));
+        } catch {
+          // Ignore errors fetching running timer
+        }
+      }
+    } catch (error) {
+      console.error("Idle check failed:", error);
+      setStatus((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }, []);
+
+  // Start the interval on mount
+  useEffect(() => {
+    // Run immediately on mount
+    checkIdle();
+
+    // Then run every interval
+    intervalRef.current = window.setInterval(checkIdle, checkIntervalMs);
+
+    setStatus((prev) => ({ ...prev, isRunning: true }));
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setStatus((prev) => ({ ...prev, isRunning: false }));
+    };
+  }, [checkIdle, checkIntervalMs]);
+
+  return status;
+}
+
+/**
+ * Hook to manually get the current idle time.
+ *
+ * @returns Current idle time in seconds
+ */
+export function useIdleTime(): {
+  idleSeconds: number;
+  refresh: () => Promise<void>;
+} {
+  const [idleSeconds, setIdleSeconds] = useState(0);
+
+  const refresh = useCallback(async () => {
+    try {
+      const seconds = await invoke<number>("get_idle_time");
+      setIdleSeconds(seconds);
+    } catch (error) {
+      console.error("Failed to get idle time:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const interval = setInterval(refresh, 1000);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
+  return { idleSeconds, refresh };
+}
