@@ -27,6 +27,12 @@ export interface AppSettings {
   clickupTeamId: string;
   /** Minutes of inactivity before stopping timer */
   idleThresholdMinutes: number;
+  /** Whether to warn when no timer is running */
+  noTimerWarningEnabled: boolean;
+  /** Minutes of activity without a timer before warning */
+  noTimerWarningMinutes: number;
+  /** Whether to repeat the warning at intervals (vs once per session) */
+  noTimerWarningRepeat: boolean;
 }
 
 /**
@@ -40,6 +46,9 @@ export async function getSettings(): Promise<AppSettings | null> {
   const apiKey = await store.get<string>("clickupApiKey");
   const teamId = await store.get<string>("clickupTeamId");
   const threshold = await store.get<number>("idleThresholdMinutes");
+  const noTimerWarningEnabled = await store.get<boolean>("noTimerWarningEnabled");
+  const noTimerWarningMinutes = await store.get<number>("noTimerWarningMinutes");
+  const noTimerWarningRepeat = await store.get<boolean>("noTimerWarningRepeat");
 
   // Return null if required fields are not set
   if (!apiKey || !teamId) {
@@ -50,6 +59,9 @@ export async function getSettings(): Promise<AppSettings | null> {
     clickupApiKey: apiKey,
     clickupTeamId: teamId,
     idleThresholdMinutes: threshold ?? 10,
+    noTimerWarningEnabled: noTimerWarningEnabled ?? true,
+    noTimerWarningMinutes: noTimerWarningMinutes ?? 10,
+    noTimerWarningRepeat: noTimerWarningRepeat ?? false,
   };
 }
 
@@ -64,6 +76,9 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("clickupApiKey", settings.clickupApiKey);
   await store.set("clickupTeamId", settings.clickupTeamId);
   await store.set("idleThresholdMinutes", settings.idleThresholdMinutes);
+  await store.set("noTimerWarningEnabled", settings.noTimerWarningEnabled);
+  await store.set("noTimerWarningMinutes", settings.noTimerWarningMinutes);
+  await store.set("noTimerWarningRepeat", settings.noTimerWarningRepeat);
   await store.save();
 }
 

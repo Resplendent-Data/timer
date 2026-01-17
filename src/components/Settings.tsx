@@ -17,6 +17,9 @@ export function Settings({ onSave }: SettingsProps) {
     clickupApiKey: "",
     clickupTeamId: "",
     idleThresholdMinutes: 10,
+    noTimerWarningEnabled: true,
+    noTimerWarningMinutes: 10,
+    noTimerWarningRepeat: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,6 +60,9 @@ export function Settings({ onSave }: SettingsProps) {
       }
       if (settings.idleThresholdMinutes < 1) {
         throw new Error("Idle threshold must be at least 1 minute");
+      }
+      if (settings.noTimerWarningEnabled && settings.noTimerWarningMinutes < 1) {
+        throw new Error("No timer warning threshold must be at least 1 minute");
       }
 
       await saveSettings(settings);
@@ -154,6 +160,71 @@ export function Settings({ onSave }: SettingsProps) {
           Timer will be stopped after this many minutes of inactivity
         </p>
       </div>
+
+      <h3>No Timer Warning</h3>
+
+      <div className="settings__field settings__field--checkbox">
+        <label htmlFor="noTimerWarningEnabled">
+          <input
+            id="noTimerWarningEnabled"
+            type="checkbox"
+            checked={settings.noTimerWarningEnabled}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                noTimerWarningEnabled: e.target.checked,
+              })
+            }
+          />
+          Warn me if no timer is running
+        </label>
+      </div>
+
+      {settings.noTimerWarningEnabled && (
+        <>
+          <div className="settings__field">
+            <label htmlFor="noTimerWarningMinutes">
+              Warn after (minutes)
+            </label>
+            <input
+              id="noTimerWarningMinutes"
+              type="number"
+              value={settings.noTimerWarningMinutes}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  noTimerWarningMinutes: parseInt(e.target.value) || 10,
+                })
+              }
+              min={1}
+              max={120}
+            />
+            <p className="settings__hint">
+              Time of activity without a timer before warning
+            </p>
+          </div>
+
+          <div className="settings__field settings__field--checkbox">
+            <label htmlFor="noTimerWarningRepeat">
+              <input
+                id="noTimerWarningRepeat"
+                type="checkbox"
+                checked={settings.noTimerWarningRepeat}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    noTimerWarningRepeat: e.target.checked,
+                  })
+                }
+              />
+              Repeat warning at intervals
+            </label>
+            <p className="settings__hint">
+              If disabled, warns once until you start a timer
+            </p>
+          </div>
+        </>
+      )}
 
       <button
         type="submit"

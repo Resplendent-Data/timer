@@ -46,6 +46,8 @@ export interface IdleStatus {
   lastStoppedTaskName: string | null;
   /** Error message if something went wrong */
   error: string | null;
+  /** Last time we sent a "no timer" warning */
+  lastNoTimerWarningAt: Date | null;
 }
 
 /**
@@ -56,6 +58,11 @@ export interface IdleStatus {
  */
 export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
   const intervalRef = useRef<number | null>(null);
+  /** Timestamp (ms) when we last saw a running timer */
+  const lastTimerSeenAtRef = useRef<number | null>(null);
+  /** Timestamp (ms) when we last sent a "no timer" warning */
+  const lastNoTimerWarningAtRef = useRef<number | null>(null);
+
   const [status, setStatus] = useState<IdleStatus>({
     isRunning: false,
     currentIdleSeconds: 0,
@@ -64,6 +71,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     lastStoppedAt: null,
     lastStoppedTaskName: null,
     error: null,
+    lastNoTimerWarningAt: null,
   });
 
   const checkIdle = useCallback(async () => {
@@ -132,11 +140,76 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
               teamId: settings.clickupTeamId,
             }
           );
+
+          const hasRunningTimer = timerInfo !== null;
+
+          if (hasRunningTimer) {
+            // Timer is running - update lastTimerSeenAt and reset warning state
+            lastTimerSeenAtRef.current = Date.now();
+            lastNoTimerWarningAtRef.current = null;
+          }
+
           setStatus((prev) => ({
             ...prev,
             runningTaskName: timerInfo?.name ?? null,
             runningTaskStartMs: timerInfo?.start_time_ms ?? null,
           }));
+
+          // Check if we should warn about no timer running
+          if (
+            !hasRunningTimer &&
+            settings.noTimerWarningEnabled
+          ) {
+            const now = Date.now();
+            const warningThresholdMs = settings.noTimerWarningMinutes * 60 * 1000;
+            
+            // Consider user "active" if idle less than 2 minutes
+            const isUserActive = result.idle_duration < 120;
+
+            // Initialize lastTimerSeenAt if this is the first check with no timer
+            if (lastTimerSeenAtRef.current === null) {
+              lastTimerSeenAtRef.current = now;
+            }
+
+            const timeSinceLastTimer = now - lastTimerSeenAtRef.current;
+            const timeSinceLastWarning = lastNoTimerWarningAtRef.current
+              ? now - lastNoTimerWarningAtRef.current
+              : Infinity;
+
+            // Should we warn?
+            // - User must be active (not idle)
+            // - Time since last timer must exceed threshold
+            // - Either: repeat is enabled OR we haven't warned yet this session
+            const shouldWarn =
+              isUserActive &&
+              timeSinceLastTimer >= warningThresholdMs &&
+              (settings.noTimerWarningRepeat
+                ? timeSinceLastWarning >= warningThresholdMs
+                : lastNoTimerWarningAtRef.current === null);
+
+            if (shouldWarn) {
+              // Check and request notification permission
+              let permissionGranted = await isPermissionGranted();
+              if (!permissionGranted) {
+                const permission = await requestPermission();
+                permissionGranted = permission === "granted";
+              }
+
+              if (permissionGranted) {
+                const minutesWithoutTimer = Math.floor(timeSinceLastTimer / 60000);
+                sendNotification({
+                  title: "No Timer Running",
+                  body: `You've been active for ${minutesWithoutTimer} minute${minutesWithoutTimer !== 1 ? "s" : ""} without a timer.`,
+                });
+              }
+
+              lastNoTimerWarningAtRef.current = now;
+              setStatus((prev) => ({
+                ...prev,
+                lastNoTimerWarningAt: new Date(now),
+              }));
+            }
+          }
         } catch {
           // Ignore errors fetching running timer
         }

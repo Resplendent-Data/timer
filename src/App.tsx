@@ -5,7 +5,11 @@
  * for configuring ClickUp integration.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import {
+  isPermissionGranted,
+  requestPermission,
+} from "@tauri-apps/plugin-notification";
 import { useIdleChecker } from "./hooks/useIdleChecker";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
@@ -18,6 +22,22 @@ function App() {
 
   // Start the background idle checker (runs every minute)
   const idleStatus = useIdleChecker(60_000);
+
+  // Request notification permission on app startup
+  useEffect(() => {
+    async function requestNotificationPermission() {
+      try {
+        const granted = await isPermissionGranted();
+        if (!granted) {
+          const permission = await requestPermission();
+          console.log("Notification permission:", permission);
+        }
+      } catch (error) {
+        console.error("Failed to request notification permission:", error);
+      }
+    }
+    requestNotificationPermission();
+  }, []);
 
   return (
     <main className="app">
