@@ -7,13 +7,20 @@ mod clickup;
 mod idle;
 mod idle_monitor;
 
+use std::sync::Mutex;
+
 use clickup::{IdleCheckResult, RunningTimerInfo, TaskSearchResult};
 use tauri::{
     include_image,
-    menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::TrayIconBuilder,
+    Emitter, Manager,
 };
+
+/// State to hold reference to the timer display menu item for dynamic updates.
+struct TrayMenuState {
+    timer_display: Mutex<MenuItem<tauri::Wry>>,
+}
 
 /// Tauri command to search for tasks.
 #[tauri::command]
@@ -103,6 +110,24 @@ async fn get_running_timer_info(
     clickup::get_running_timer_info(api_key, team_id).await
 }
 
+/// Tauri command to update the tray menu timer display text.
+///
+/// # Arguments
+///
+/// * `text` - The text to display (e.g., "Task Name - 1:23:45" or "No timer running")
+#[tauri::command]
+fn update_tray_timer_display(
+    text: String,
+    state: tauri::State<TrayMenuState>,
+) -> Result<(), String> {
+    state
+        .timer_display
+        .lock()
+        .map_err(|e| e.to_string())?
+        .set_text(&text)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -110,10 +135,35 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            // Create system tray menu
+            // Create system tray menu items
+            let timer_display =
+                MenuItem::with_id(app, "timer_display", "No timer running", false, None::<&str>)?;
+            let start_item =
+                MenuItem::with_id(app, "start_timer", "Start Timer...", true, None::<&str>)?;
+            let stop_item =
+                MenuItem::with_id(app, "stop_timer", "Stop Timer", true, None::<&str>)?;
+            let show_item =
+                MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            // Build menu with separators
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &timer_display,
+                    &PredefinedMenuItem::separator(app)?,
+                    &start_item,
+                    &stop_item,
+                    &PredefinedMenuItem::separator(app)?,
+                    &show_item,
+                    &quit_item,
+                ],
+            )?;
+
+            // Store timer_display reference for dynamic updates
+            app.manage(TrayMenuState {
+                timer_display: Mutex::new(timer_display),
+            });
 
             // Load the transparent tray icon (embedded at compile time)
             let tray_icon = include_image!("icons/tray-icon.png");
@@ -122,7 +172,7 @@ pub fn run() {
             let _tray = TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         app.exit(0);
@@ -133,21 +183,17 @@ pub fn run() {
                             let _ = window.set_focus();
                         }
                     }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
+                    "start_timer" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
+                        let _ = app.emit("menu-start-timer", ());
                     }
+                    "stop_timer" => {
+                        let _ = app.emit("menu-stop-timer", ());
+                    }
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -175,6 +221,7 @@ pub fn run() {
             search_tasks,
             start_timer,
             stop_timer,
+            update_tray_timer_display,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

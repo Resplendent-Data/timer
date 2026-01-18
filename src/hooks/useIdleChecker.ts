@@ -57,6 +57,44 @@ export interface IdleStatus {
 }
 
 /**
+ * Format elapsed time as H:MM:SS or M:SS.
+ */
+function formatElapsedTime(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  }
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Update the tray menu timer display text.
+ */
+async function updateTrayDisplay(
+  taskName: string | null,
+  startTimeMs: number | null
+): Promise<void> {
+  try {
+    if (taskName && startTimeMs) {
+      const elapsed = Date.now() - startTimeMs;
+      await invoke("update_tray_timer_display", {
+        text: `${taskName} - ${formatElapsedTime(elapsed)}`,
+      });
+    } else {
+      await invoke("update_tray_timer_display", {
+        text: "No timer running",
+      });
+    }
+  } catch (e) {
+    console.error("Failed to update tray display:", e);
+  }
+}
+
+/**
  * Hook that monitors idle time and automatically stops ClickUp timers.
  *
  * @param checkIntervalMs - How often to check idle time (default: 60000ms = 1 minute)
@@ -70,6 +108,8 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
   const lastNoTimerWarningAtRef = useRef<number | null>(null);
   /** Task ID of the last running timer we added to recent tasks */
   const lastAddedTaskIdRef = useRef<string | null>(null);
+  /** Interval for fast tray updates (10s) when timer is running */
+  const trayIntervalRef = useRef<number | null>(null);
 
   const [status, setStatus] = useState<IdleStatus>({
     isRunning: false,
@@ -183,6 +223,12 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
             runningTaskStartMs: timerInfo?.start_time_ms ?? null,
           }));
 
+          // Update tray display with current timer info
+          await updateTrayDisplay(
+            timerInfo?.name ?? null,
+            timerInfo?.start_time_ms ?? null
+          );
+
           // Check if we should warn about no timer running
           if (
             !hasRunningTimer &&
@@ -270,6 +316,33 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
       setStatus((prev) => ({ ...prev, isRunning: false }));
     };
   }, [checkIdle, checkIntervalMs]);
+
+  // Fast tray update interval (10s) when timer is running
+  useEffect(() => {
+    // Clear any existing fast interval
+    if (trayIntervalRef.current) {
+      clearInterval(trayIntervalRef.current);
+      trayIntervalRef.current = null;
+    }
+
+    // Only start fast interval if timer is running
+    if (status.runningTaskName && status.runningTaskStartMs) {
+      const taskName = status.runningTaskName;
+      const startMs = status.runningTaskStartMs;
+
+      // Update every 10 seconds
+      trayIntervalRef.current = window.setInterval(() => {
+        updateTrayDisplay(taskName, startMs);
+      }, 10_000);
+    }
+
+    return () => {
+      if (trayIntervalRef.current) {
+        clearInterval(trayIntervalRef.current);
+        trayIntervalRef.current = null;
+      }
+    };
+  }, [status.runningTaskName, status.runningTaskStartMs]);
 
   return { ...status, refresh: checkIdle };
 }
