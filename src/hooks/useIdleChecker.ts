@@ -14,12 +14,13 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { getSettings } from "../lib/store";
+import { getSettings, addRecentTask } from "../lib/store";
 
 /** Result returned from the Rust check_and_stop_timer command */
 interface IdleCheckResult {
   stopped: boolean;
   task_name: string | null;
+  task_id: string | null;
   idle_duration: number;
   error: string | null;
 }
@@ -27,6 +28,7 @@ interface IdleCheckResult {
 /** Info about the running timer from Rust */
 interface RunningTimerInfo {
   name: string;
+  task_id: string | null;
   start_time_ms: number;
 }
 
@@ -44,6 +46,8 @@ export interface IdleStatus {
   lastStoppedAt: Date | null;
   /** Last stopped task name */
   lastStoppedTaskName: string | null;
+  /** Last stopped task ID (for resume functionality) */
+  lastStoppedTaskId: string | null;
   /** Error message if something went wrong */
   error: string | null;
   /** Last time we sent a "no timer" warning */
@@ -64,6 +68,8 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
   const lastTimerSeenAtRef = useRef<number | null>(null);
   /** Timestamp (ms) when we last sent a "no timer" warning */
   const lastNoTimerWarningAtRef = useRef<number | null>(null);
+  /** Task ID of the last running timer we added to recent tasks */
+  const lastAddedTaskIdRef = useRef<string | null>(null);
 
   const [status, setStatus] = useState<IdleStatus>({
     isRunning: false,
@@ -72,6 +78,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     runningTaskStartMs: null,
     lastStoppedAt: null,
     lastStoppedTaskName: null,
+    lastStoppedTaskId: null,
     error: null,
     lastNoTimerWarningAt: null,
     refresh: async () => {},
@@ -121,6 +128,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           sendNotification({
             title: "Timer Stopped",
             body: `Timer stopped due to inactivity on "${result.task_name}" (idle for ${idleMinutes} minutes)`,
+            sound: "default",
           });
         }
 
@@ -128,6 +136,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           ...prev,
           lastStoppedAt: new Date(),
           lastStoppedTaskName: result.task_name,
+          lastStoppedTaskId: result.task_id,
           runningTaskName: null,
           runningTaskStartMs: null,
         }));
@@ -150,6 +159,22 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
             // Timer is running - update lastTimerSeenAt and reset warning state
             lastTimerSeenAtRef.current = Date.now();
             lastNoTimerWarningAtRef.current = null;
+
+            // Add to recent tasks if this is a new task we haven't tracked yet
+            // (only if task has a task_id - manual timers without tasks won't be added)
+            if (timerInfo.task_id && timerInfo.task_id !== lastAddedTaskIdRef.current) {
+              lastAddedTaskIdRef.current = timerInfo.task_id;
+              console.log("[useIdleChecker] Adding running task to recent:", timerInfo.name);
+              addRecentTask({
+                id: timerInfo.task_id,
+                name: timerInfo.name,
+              }).catch((err) => {
+                console.error("[useIdleChecker] Failed to add recent task:", err);
+              });
+            }
+          } else {
+            // No timer running - reset the last added task ID so we can add it again later
+            lastAddedTaskIdRef.current = null;
           }
 
           setStatus((prev) => ({
@@ -203,6 +228,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
                 sendNotification({
                   title: "No Timer Running",
                   body: `You've been active for ${minutesWithoutTimer} minute${minutesWithoutTimer !== 1 ? "s" : ""} without a timer.`,
+                  sound: "default",
                 });
               }
 

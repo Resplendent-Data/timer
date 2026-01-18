@@ -11,6 +11,8 @@
 
 import { useEffect, useState } from "react";
 import { IdleStatus, useIdleTime } from "../hooks/useIdleChecker";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 interface StatusIndicatorProps {
   status: IdleStatus;
@@ -98,70 +100,81 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
   const elapsedTime = useElapsedTime(status.runningTaskStartMs);
 
   return (
-    <div className="status-indicator">
-      <h2>Status</h2>
+    <div className="space-y-3">
+      <h2 className="text-lg font-semibold">Status</h2>
 
       {/* Monitoring Status */}
-      <div className="status-indicator__item">
-        <span className="status-indicator__label">Monitoring</span>
-        <span
-          className={`status-indicator__value status-indicator__value--${
-            status.isRunning ? "active" : "inactive"
-          }`}
-        >
-          {status.isRunning ? "Active" : "Inactive"}
-        </span>
-      </div>
+      <Card>
+        <CardContent className="flex items-center justify-between py-3">
+          <span className="text-sm font-medium">Monitoring</span>
+          <Badge variant={status.isRunning ? "default" : "secondary"}>
+            {status.isRunning ? "Active" : "Inactive"}
+          </Badge>
+        </CardContent>
+      </Card>
 
       {/* Current Idle Time */}
-      <div className="status-indicator__item status-indicator__item--idle">
-        <span className="status-indicator__label">Idle Time</span>
-        <span className="status-indicator__value status-indicator__value--large">
-          {formatDuration(idleSeconds)}
-        </span>
-      </div>
+      <Card className="bg-primary text-primary-foreground">
+        <CardContent className="flex items-center justify-between py-3">
+          <span className="text-sm font-medium">Idle Time</span>
+          <span className="text-2xl font-bold tabular-nums">
+            {formatDuration(idleSeconds)}
+          </span>
+        </CardContent>
+      </Card>
 
       {/* Running Timer */}
-      <div className="status-indicator__item">
-        <span className="status-indicator__label">Running Timer</span>
-        <span
-          className={`status-indicator__value ${
-            status.runningTaskName
-              ? "status-indicator__value--task"
-              : "status-indicator__value--none"
-          }`}
-        >
-          {status.runningTaskName || "No timer running"}
-        </span>
-      </div>
+      <Card>
+        <CardContent className="flex items-center justify-between py-3">
+          <span className="text-sm font-medium">Running Timer</span>
+          <span
+            className={
+              status.runningTaskName
+                ? "text-sm font-medium text-primary"
+                : "text-sm text-muted-foreground italic"
+            }
+          >
+            {status.runningTaskName || "No timer running"}
+          </span>
+        </CardContent>
+      </Card>
 
       {/* Elapsed Time (only show when timer is running) */}
       {status.runningTaskName && elapsedTime && (
-        <div className="status-indicator__item status-indicator__item--elapsed">
-          <span className="status-indicator__label">Elapsed</span>
-          <span className="status-indicator__value status-indicator__value--elapsed">
-            {elapsedTime}
-          </span>
-        </div>
+        <Card className="bg-emerald-600 text-white dark:bg-emerald-700">
+          <CardContent className="flex items-center justify-between py-3">
+            <span className="text-sm font-medium">Elapsed</span>
+            <span className="text-xl font-bold tabular-nums">{elapsedTime}</span>
+          </CardContent>
+        </Card>
       )}
 
       {/* Last Stopped */}
       {status.lastStoppedAt && status.lastStoppedTaskName && (
-        <div className="status-indicator__item status-indicator__item--stopped">
-          <span className="status-indicator__label">Last Stopped</span>
-          <span className="status-indicator__value">
-            "{status.lastStoppedTaskName}"
-            <br />
-            <small>{formatRelativeTime(status.lastStoppedAt)}</small>
-          </span>
-        </div>
+        <Card className="border-l-4 border-l-amber-500">
+          <CardContent className="py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Last Stopped</span>
+              <span className="text-xs text-muted-foreground">
+                {formatRelativeTime(status.lastStoppedAt)}
+              </span>
+            </div>
+            <p className="text-sm mt-1 text-muted-foreground">
+              "{status.lastStoppedTaskName}"
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Error Display */}
       {status.error && (
-        <div className="status-indicator__error">
-          <strong>Error:</strong> {status.error}
-        </div>
+        <Card className="bg-destructive/10 border-destructive">
+          <CardContent className="py-3">
+            <p className="text-sm text-destructive">
+              <strong>Error:</strong> {status.error}
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

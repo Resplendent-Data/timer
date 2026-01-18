@@ -13,6 +13,8 @@ pub struct IdleCheckResult {
     pub stopped: bool,
     /// Name of the task that was stopped (if any)
     pub task_name: Option<String>,
+    /// ID of the task that was stopped (for resume functionality)
+    pub task_id: Option<String>,
     /// Current idle duration in seconds
     pub idle_duration: u64,
     /// Error message if something went wrong (but didn't prevent execution)
@@ -24,6 +26,8 @@ pub struct IdleCheckResult {
 pub struct RunningTimerInfo {
     /// Name of the task
     pub name: String,
+    /// Task ID (None for manual timers without a task)
+    pub task_id: Option<String>,
     /// Start time in milliseconds since epoch (for calculating elapsed time)
     pub start_time_ms: i64,
 }
@@ -55,6 +59,7 @@ struct RunningTimeEntry {
 /// A ClickUp task reference
 #[derive(Debug, Deserialize)]
 struct Task {
+    id: String,
     name: String,
 }
 
@@ -80,6 +85,11 @@ impl RunningTimeEntry {
         "Manual Timer".to_string()
     }
 
+    /// Get the task ID if this timer is associated with a task
+    fn task_id(&self) -> Option<String> {
+        self.task.as_ref().map(|t| t.id.clone())
+    }
+
     /// Get the start time in milliseconds since epoch
     fn start_time_ms(&self) -> Option<i64> {
         self.start.parse::<i64>().ok()
@@ -87,17 +97,92 @@ impl RunningTimeEntry {
 }
 
 
-/// A ClickUp task search result
+/// A tag on a ClickUp task
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskTag {
+    pub name: String,
+    #[serde(default)]
+    pub tag_fg: Option<String>,
+    #[serde(default)]
+    pub tag_bg: Option<String>,
+}
+
+/// A ClickUp task search result with detailed information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskSearchResult {
     pub id: String,
     pub name: String,
     pub custom_id: Option<String>,
+    /// Task status name (e.g., "in progress", "complete")
+    pub status_name: Option<String>,
+    /// Task status color (hex, e.g., "#d3d3d3")
+    pub status_color: Option<String>,
+    /// Name of the list containing this task
+    pub list_name: Option<String>,
+    /// Name of the folder (if any)
+    pub folder_name: Option<String>,
+    /// Name of the space
+    pub space_name: Option<String>,
+    /// Tags on the task
+    pub tags: Vec<TaskTag>,
+}
+
+/// Internal struct for deserializing ClickUp API response
+#[derive(Debug, Deserialize)]
+struct TaskSearchApiResult {
+    id: String,
+    name: String,
+    custom_id: Option<String>,
+    status: Option<TaskStatus>,
+    list: Option<TaskList>,
+    folder: Option<TaskFolder>,
+    space: Option<TaskSpace>,
+    #[serde(default)]
+    tags: Vec<TaskTag>,
 }
 
 #[derive(Debug, Deserialize)]
-struct TaskSearchResponse {
-    tasks: Vec<TaskSearchResult>,
+struct TaskStatus {
+    status: String,
+    color: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskList {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskFolder {
+    name: String,
+    #[serde(default)]
+    hidden: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskSpace {
+    name: Option<String>,
+}
+
+impl From<TaskSearchApiResult> for TaskSearchResult {
+    fn from(api: TaskSearchApiResult) -> Self {
+        TaskSearchResult {
+            id: api.id,
+            name: api.name,
+            custom_id: api.custom_id,
+            status_name: api.status.as_ref().map(|s| s.status.clone()),
+            status_color: api.status.and_then(|s| s.color),
+            list_name: api.list.map(|l| l.name),
+            folder_name: api.folder.and_then(|f| if f.hidden { None } else { Some(f.name) }),
+            space_name: api.space.and_then(|s| s.name),
+            tags: api.tags,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskSearchApiResponse {
+    tasks: Vec<TaskSearchApiResult>,
 }
 
 /// Search for tasks in a workspace.
@@ -127,12 +212,14 @@ pub async fn search_tasks(
         return Err(format!("ClickUp API error ({}): {}", status, body));
     }
 
-    let search_response: TaskSearchResponse = response
+    let search_response: TaskSearchApiResponse = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    Ok(search_response.tasks)
+    // Convert API results to our richer TaskSearchResult type
+    let tasks: Vec<TaskSearchResult> = search_response.tasks.into_iter().map(|t| t.into()).collect();
+    Ok(tasks)
 }
 
 /// Start a time entry for a specific task.
@@ -218,6 +305,7 @@ pub async fn check_and_stop_timer_impl(
         return Ok(IdleCheckResult {
             stopped: false,
             task_name: None,
+            task_id: None,
             idle_duration: idle_secs,
             error: None,
         });
@@ -255,6 +343,7 @@ pub async fn check_and_stop_timer_impl(
     if let Some(entry) = running_response.data {
         if entry.is_running() {
             let task_name = entry.display_name();
+            let task_id = entry.task_id();
 
             // Stop the running timer
             let stop_url = format!(
@@ -276,6 +365,7 @@ pub async fn check_and_stop_timer_impl(
                 return Ok(IdleCheckResult {
                     stopped: false,
                     task_name: Some(task_name),
+                    task_id,
                     idle_duration: idle_secs,
                     error: Some(format!("Failed to stop timer ({}): {}", status, body)),
                 });
@@ -284,6 +374,7 @@ pub async fn check_and_stop_timer_impl(
             return Ok(IdleCheckResult {
                 stopped: true,
                 task_name: Some(task_name),
+                task_id,
                 idle_duration: idle_secs,
                 error: None,
             });
@@ -294,6 +385,7 @@ pub async fn check_and_stop_timer_impl(
     Ok(IdleCheckResult {
         stopped: false,
         task_name: None,
+        task_id: None,
         idle_duration: idle_secs,
         error: None,
     })
@@ -395,6 +487,7 @@ pub async fn get_running_timer_info(
         if entry.is_running() {
             Some(RunningTimerInfo {
                 name: entry.display_name(),
+                task_id: entry.task_id(),
                 start_time_ms: entry.start_time_ms().unwrap_or(0),
             })
         } else {
@@ -441,6 +534,7 @@ mod tests {
         let result = IdleCheckResult {
             stopped: true,
             task_name: Some("Test Task".to_string()),
+            task_id: Some("abc123".to_string()),
             idle_duration: 600,
             error: None,
         };
@@ -448,6 +542,7 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"stopped\":true"));
         assert!(json.contains("\"task_name\":\"Test Task\""));
+        assert!(json.contains("\"task_id\":\"abc123\""));
         assert!(json.contains("\"idle_duration\":600"));
     }
 }

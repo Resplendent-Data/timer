@@ -14,12 +14,11 @@ import { useIdleChecker } from "./hooks/useIdleChecker";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
-import "./App.css";
-
-type Tab = "status" | "settings";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>("status");
+  const [activeTab, setActiveTab] = useState("status");
 
   // Start the background idle checker (runs every minute)
   const idleStatus = useIdleChecker(60_000);
@@ -41,46 +40,42 @@ function App() {
   }, []);
 
   return (
-    <main className="app">
-      <header className="app__header">
-        <h1 className="app__title">Resplendent Timer</h1>
-        <p className="app__subtitle">
+    <main className="min-h-screen flex flex-col p-4 pt-10 max-w-md mx-auto">
+      {/* Header - draggable on macOS */}
+      <header
+        className="text-center mb-6 pb-4 border-b border-border"
+        data-tauri-drag-region
+      >
+        <h1 className="text-xl font-semibold tracking-tight">
+          Resplendent Timer
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
           Automatically stops ClickUp timers when you're idle
         </p>
       </header>
 
-      <nav className="app__tabs">
-        <button
-          className={`app__tab ${activeTab === "status" ? "app__tab--active" : ""}`}
-          onClick={() => setActiveTab("status")}
-        >
-          Status
-        </button>
-        <button
-          className={`app__tab ${activeTab === "settings" ? "app__tab--active" : ""}`}
-          onClick={() => setActiveTab("settings")}
-        >
-          Settings
-        </button>
-      </nav>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsTrigger value="status">Status</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
 
-      <div className="app__content">
-        {activeTab === "status" && (
-          <>
-            <StatusIndicator status={idleStatus} />
-            <TimerControls status={idleStatus} />
-          </>
-        )}
-        {activeTab === "settings" && (
+        <TabsContent value="status" className="space-y-6 mt-0">
+          <StatusIndicator status={idleStatus} />
+          <TimerControls status={idleStatus} />
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-0">
           <Settings onSave={() => setActiveTab("status")} />
-        )}
-      </div>
+        </TabsContent>
+      </Tabs>
 
-      <footer className="app__footer">
-        <p>
-          <small>
-            Minimize to system tray to keep monitoring in the background
-          </small>
+      {/* Footer */}
+      <Separator className="mt-auto" />
+      <footer className="text-center py-4">
+        <p className="text-xs text-muted-foreground">
+          Minimize to system tray to keep monitoring in the background
         </p>
       </footer>
     </main>

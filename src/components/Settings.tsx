@@ -7,6 +7,12 @@
 
 import { useState, useEffect, FormEvent } from "react";
 import { getSettings, saveSettings, AppSettings } from "../lib/store";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 interface SettingsProps {
   onSave?: () => void;
@@ -78,161 +84,186 @@ export function Settings({ onSave }: SettingsProps) {
 
   if (loading) {
     return (
-      <div className="settings settings--loading">
-        <p>Loading settings...</p>
+      <div className="flex items-center justify-center py-8">
+        <p className="text-muted-foreground">Loading settings...</p>
       </div>
     );
   }
 
   return (
-    <form className="settings" onSubmit={handleSubmit}>
-      <h2>ClickUp Settings</h2>
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">ClickUp Settings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error && (
+            <div className="p-3 rounded-md bg-destructive/10 border border-destructive text-destructive text-sm">
+              {error}
+            </div>
+          )}
 
-      {error && <div className="settings__error">{error}</div>}
+          {/* API Key */}
+          <div className="space-y-2">
+            <Label htmlFor="apiKey">API Key</Label>
+            <div className="flex gap-2">
+              <Input
+                id="apiKey"
+                type={showApiKey ? "text" : "password"}
+                value={settings.clickupApiKey}
+                onChange={(e) =>
+                  setSettings({ ...settings, clickupApiKey: e.target.value })
+                }
+                placeholder="pk_..."
+                autoComplete="off"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowApiKey(!showApiKey)}
+              >
+                {showApiKey ? "Hide" : "Show"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Get your API key from{" "}
+              <a
+                href="https://app.clickup.com/settings/apps"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                ClickUp Settings &rarr; Apps
+              </a>
+            </p>
+          </div>
 
-      <div className="settings__field">
-        <label htmlFor="apiKey">API Key</label>
-        <div className="settings__input-group">
-          <input
-            id="apiKey"
-            type={showApiKey ? "text" : "password"}
-            value={settings.clickupApiKey}
-            onChange={(e) =>
-              setSettings({ ...settings, clickupApiKey: e.target.value })
-            }
-            placeholder="pk_..."
-            autoComplete="off"
-          />
-          <button
-            type="button"
-            className="settings__toggle-visibility"
-            onClick={() => setShowApiKey(!showApiKey)}
-            title={showApiKey ? "Hide API key" : "Show API key"}
-          >
-            {showApiKey ? "Hide" : "Show"}
-          </button>
-        </div>
-        <p className="settings__hint">
-          Get your API key from{" "}
-          <a
-            href="https://app.clickup.com/settings/apps"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            ClickUp Settings → Apps
-          </a>
-        </p>
-      </div>
+          {/* Team ID */}
+          <div className="space-y-2">
+            <Label htmlFor="teamId">Team ID</Label>
+            <Input
+              id="teamId"
+              type="text"
+              value={settings.clickupTeamId}
+              onChange={(e) =>
+                setSettings({ ...settings, clickupTeamId: e.target.value })
+              }
+              placeholder="123456789"
+            />
+            <p className="text-xs text-muted-foreground">
+              Find your Team ID in the ClickUp URL: app.clickup.com/
+              <strong>[team_id]</strong>/...
+            </p>
+          </div>
 
-      <div className="settings__field">
-        <label htmlFor="teamId">Team ID</label>
-        <input
-          id="teamId"
-          type="text"
-          value={settings.clickupTeamId}
-          onChange={(e) =>
-            setSettings({ ...settings, clickupTeamId: e.target.value })
-          }
-          placeholder="123456789"
-        />
-        <p className="settings__hint">
-          Find your Team ID in the ClickUp URL: app.clickup.com/
-          <strong>[team_id]</strong>/...
-        </p>
-      </div>
-
-      <div className="settings__field">
-        <label htmlFor="threshold">Idle Threshold (minutes)</label>
-        <input
-          id="threshold"
-          type="number"
-          value={settings.idleThresholdMinutes}
-          onChange={(e) =>
-            setSettings({
-              ...settings,
-              idleThresholdMinutes: parseInt(e.target.value) || 10,
-            })
-          }
-          min={1}
-          max={120}
-        />
-        <p className="settings__hint">
-          Timer will be stopped after this many minutes of inactivity
-        </p>
-      </div>
-
-      <h3>No Timer Warning</h3>
-
-      <div className="settings__field settings__field--checkbox">
-        <label htmlFor="noTimerWarningEnabled">
-          <input
-            id="noTimerWarningEnabled"
-            type="checkbox"
-            checked={settings.noTimerWarningEnabled}
-            onChange={(e) =>
-              setSettings({
-                ...settings,
-                noTimerWarningEnabled: e.target.checked,
-              })
-            }
-          />
-          Warn me if no timer is running
-        </label>
-      </div>
-
-      {settings.noTimerWarningEnabled && (
-        <>
-          <div className="settings__field">
-            <label htmlFor="noTimerWarningMinutes">
-              Warn after (minutes)
-            </label>
-            <input
-              id="noTimerWarningMinutes"
+          {/* Idle Threshold */}
+          <div className="space-y-2">
+            <Label htmlFor="threshold">Idle Threshold (minutes)</Label>
+            <Input
+              id="threshold"
               type="number"
-              value={settings.noTimerWarningMinutes}
+              value={settings.idleThresholdMinutes}
               onChange={(e) =>
                 setSettings({
                   ...settings,
-                  noTimerWarningMinutes: parseInt(e.target.value) || 10,
+                  idleThresholdMinutes: parseInt(e.target.value) || 10,
                 })
               }
               min={1}
               max={120}
+              className="w-24"
             />
-            <p className="settings__hint">
-              Time of activity without a timer before warning
+            <p className="text-xs text-muted-foreground">
+              Timer will be stopped after this many minutes of inactivity
             </p>
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="settings__field settings__field--checkbox">
-            <label htmlFor="noTimerWarningRepeat">
-              <input
-                id="noTimerWarningRepeat"
-                type="checkbox"
-                checked={settings.noTimerWarningRepeat}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    noTimerWarningRepeat: e.target.checked,
-                  })
-                }
-              />
-              Repeat warning at intervals
-            </label>
-            <p className="settings__hint">
-              If disabled, warns once until you start a timer
-            </p>
+      {/* No Timer Warning Section */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">No Timer Warning</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Enable Warning */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="noTimerWarningEnabled">
+                Warn me if no timer is running
+              </Label>
+            </div>
+            <Switch
+              id="noTimerWarningEnabled"
+              checked={settings.noTimerWarningEnabled}
+              onCheckedChange={(checked) =>
+                setSettings({
+                  ...settings,
+                  noTimerWarningEnabled: checked,
+                })
+              }
+            />
           </div>
-        </>
-      )}
 
-      <button
-        type="submit"
-        className="settings__submit"
-        disabled={saving}
-      >
+          {settings.noTimerWarningEnabled && (
+            <>
+              <Separator />
+
+              {/* Warning Threshold */}
+              <div className="space-y-2">
+                <Label htmlFor="noTimerWarningMinutes">
+                  Warn after (minutes)
+                </Label>
+                <Input
+                  id="noTimerWarningMinutes"
+                  type="number"
+                  value={settings.noTimerWarningMinutes}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      noTimerWarningMinutes: parseInt(e.target.value) || 10,
+                    })
+                  }
+                  min={1}
+                  max={120}
+                  className="w-24"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Time of activity without a timer before warning
+                </p>
+              </div>
+
+              {/* Repeat Warning */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="noTimerWarningRepeat">
+                    Repeat warning at intervals
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    If disabled, warns once until you start a timer
+                  </p>
+                </div>
+                <Switch
+                  id="noTimerWarningRepeat"
+                  checked={settings.noTimerWarningRepeat}
+                  onCheckedChange={(checked) =>
+                    setSettings({
+                      ...settings,
+                      noTimerWarningRepeat: checked,
+                    })
+                  }
+                />
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Button type="submit" className="w-full" disabled={saving}>
         {saving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
-      </button>
+      </Button>
     </form>
   );
 }
