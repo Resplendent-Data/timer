@@ -64,10 +64,36 @@ jobs:
             - **macOS (Apple Silicon)**: `.dmg` file
             - **Linux**: `.AppImage` or `.deb` file
 
-            ### Notes
+            ---
 
-            - macOS: If you see "App is damaged", right-click and select "Open"
-            - Linux AppImage: Make executable with `chmod +x` before running
+            ## macOS Installation
+
+            1. Download the `.dmg` file
+            2. Open the DMG and drag the app to Applications
+            3. **Important:** Before opening, run this command in Terminal:
+
+            ```bash
+            xattr -cr "/Applications/Resplendent Timer.app"
+            ```
+
+            4. Now open the app normally
+
+            > **Why?** The app is not signed with an Apple Developer certificate, so macOS marks it as "damaged". The command above removes this quarantine flag.
+
+            ---
+
+            ## Linux Installation
+
+            ### AppImage
+            ```bash
+            chmod +x Resplendent_Timer_*.AppImage
+            ./Resplendent_Timer_*.AppImage
+            ```
+
+            ### Debian/Ubuntu
+            ```bash
+            sudo dpkg -i resplendent-timer_*.deb
+            ```
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
