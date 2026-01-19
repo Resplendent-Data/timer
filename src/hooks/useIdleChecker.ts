@@ -166,6 +166,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
         if (permissionGranted) {
           const idleMinutes = Math.floor(result.idle_duration / 60);
           sendNotification({
+            id: Date.now(),
             title: "Timer Stopped",
             body: `Timer stopped due to inactivity on "${result.task_name}" (idle for ${idleMinutes} minutes)`,
             sound: "default",
@@ -272,6 +273,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
               if (permissionGranted) {
                 const minutesWithoutTimer = Math.floor(timeSinceLastTimer / 60000);
                 sendNotification({
+                  id: Date.now(),
                   title: "No Timer Running",
                   body: `You've been active for ${minutesWithoutTimer} minute${minutesWithoutTimer !== 1 ? "s" : ""} without a timer.`,
                   sound: "default",
