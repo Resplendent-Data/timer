@@ -78,13 +78,10 @@ function App() {
   }, [idleStatus]);
 
   return (
-    <main className="h-screen w-full flex flex-col overflow-hidden bg-background text-foreground">
-      {/* Invisible Drag Region for Traffic Lights (macOS) */}
-      <div className="h-8 w-full shrink-0" data-tauri-drag-region />
-
-      {/* Fixed Header - Draggable */}
+    <main className="h-screen w-full flex flex-col bg-background text-foreground">
+      {/* Sticky Header with Traffic Light Space - Draggable */}
       <header
-        className="text-center px-6 pb-4 border-b border-border shrink-0 select-none"
+        className="sticky top-0 z-10 bg-background pt-8 text-center px-6 pb-4 border-b border-border shrink-0 select-none"
         data-tauri-drag-region
       >
         <h1 className="text-xl font-semibold tracking-tight pointer-events-none">
@@ -96,7 +93,7 @@ function App() {
       </header>
 
       {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto">
         <div className="p-6 flex flex-col min-h-full">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <TabsList className="grid w-full grid-cols-2 mb-6 shrink-0">
