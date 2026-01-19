@@ -9,11 +9,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
+import { sendNotification } from "../lib/notification";
 import { getSettings, addRecentTask } from "../lib/store";
 
 /** Result returned from the Rust check_and_stop_timer command */
@@ -156,22 +152,11 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
 
       // If a timer was stopped, show notification and update state
       if (result.stopped && result.task_name) {
-        // Check and request notification permission
-        let permissionGranted = await isPermissionGranted();
-        if (!permissionGranted) {
-          const permission = await requestPermission();
-          permissionGranted = permission === "granted";
-        }
-
-        if (permissionGranted) {
-          const idleMinutes = Math.floor(result.idle_duration / 60);
-          sendNotification({
-            id: Date.now(),
-            title: "Timer Stopped",
-            body: `Timer stopped due to inactivity on "${result.task_name}" (idle for ${idleMinutes} minutes)`,
-            sound: "default",
-          });
-        }
+        const idleMinutes = Math.floor(result.idle_duration / 60);
+        await sendNotification({
+          title: "Timer Stopped",
+          body: `Timer stopped due to inactivity on "${result.task_name}" (idle for ${idleMinutes} minutes)`,
+        });
 
         setStatus((prev) => ({
           ...prev,
@@ -263,22 +248,11 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
                 : lastNoTimerWarningAtRef.current === null);
 
             if (shouldWarn) {
-              // Check and request notification permission
-              let permissionGranted = await isPermissionGranted();
-              if (!permissionGranted) {
-                const permission = await requestPermission();
-                permissionGranted = permission === "granted";
-              }
-
-              if (permissionGranted) {
-                const minutesWithoutTimer = Math.floor(timeSinceLastTimer / 60000);
-                sendNotification({
-                  id: Date.now(),
-                  title: "No Timer Running",
-                  body: `You've been active for ${minutesWithoutTimer} minute${minutesWithoutTimer !== 1 ? "s" : ""} without a timer.`,
-                  sound: "default",
-                });
-              }
+              const minutesWithoutTimer = Math.floor(timeSinceLastTimer / 60000);
+              await sendNotification({
+                title: "No Timer Running",
+                body: `You've been active for ${minutesWithoutTimer} minute${minutesWithoutTimer !== 1 ? "s" : ""} without a timer.`,
+              });
 
               lastNoTimerWarningAtRef.current = now;
               setStatus((prev) => ({

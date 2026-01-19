@@ -8,10 +8,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import {
-  isPermissionGranted,
-  requestPermission,
-} from "@tauri-apps/plugin-notification";
+import { checkNotificationPermission } from "./lib/notification";
 import { useIdleChecker } from "./hooks/useIdleChecker";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
@@ -26,20 +23,11 @@ function App() {
   // Start the background idle checker (runs every minute)
   const idleStatus = useIdleChecker(60_000);
 
-  // Request notification permission on app startup
+  // Request notification permission on app startup (no-op on Linux)
   useEffect(() => {
-    async function requestNotificationPermission() {
-      try {
-        const granted = await isPermissionGranted();
-        if (!granted) {
-          const permission = await requestPermission();
-          console.log("Notification permission:", permission);
-        }
-      } catch (error) {
-        console.error("Failed to request notification permission:", error);
-      }
-    }
-    requestNotificationPermission();
+    checkNotificationPermission().catch((error) => {
+      console.error("Failed to request notification permission:", error);
+    });
   }, []);
 
   // Handle tray menu events

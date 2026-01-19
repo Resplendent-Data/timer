@@ -128,6 +128,38 @@ fn update_tray_timer_display(
         .map_err(|e| e.to_string())
 }
 
+/// Send a notification using notify-send (Linux only).
+///
+/// This is a workaround for GNOME 46+ where the Tauri notification plugin
+/// doesn't work due to DBus connection lifecycle issues.
+///
+/// # Arguments
+///
+/// * `title` - Notification title
+/// * `body` - Notification body text
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn send_notification_linux(title: String, body: String) -> Result<(), String> {
+    use std::process::Command;
+
+    Command::new("notify-send")
+        .arg("--app-name=Resplendent Timer")
+        .arg(&title)
+        .arg(&body)
+        .spawn()
+        .map_err(|e| format!("Failed to send notification: {}", e))?;
+
+    Ok(())
+}
+
+/// No-op on non-Linux platforms (they use the Tauri plugin).
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+async fn send_notification_linux(_title: String, _body: String) -> Result<(), String> {
+    // On non-Linux, this command should not be called - use the Tauri plugin instead
+    Err("send_notification_linux is only available on Linux".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -227,6 +259,7 @@ pub fn run() {
             start_timer,
             stop_timer,
             update_tray_timer_display,
+            send_notification_linux,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
