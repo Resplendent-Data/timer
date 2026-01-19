@@ -96,6 +96,6 @@ jobs:
             ```bash
             sudo dpkg -i resplendent-timer_*.deb
             ```
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
