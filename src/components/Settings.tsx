@@ -7,6 +7,7 @@
 
 import { useState, useEffect, FormEvent } from "react";
 import { getSettings, saveSettings, AppSettings } from "../lib/store";
+import { useUpdater } from "../hooks/useUpdater";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,9 @@ export function Settings({ onSave }: SettingsProps) {
   const [saved, setSaved] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-updater
+  const updater = useUpdater();
 
   // Load settings on mount
   useEffect(() => {
@@ -258,6 +262,67 @@ export function Settings({ onSave }: SettingsProps) {
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Updates Section */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Updates</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>App Version</Label>
+              <p className="text-sm text-muted-foreground">
+                v{updater.currentVersion}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => updater.checkForUpdates()}
+              disabled={updater.isChecking || updater.isUpdating}
+            >
+              {updater.isChecking
+                ? "Checking..."
+                : updater.isUpdating
+                ? "Updating..."
+                : "Check for Updates"}
+            </Button>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-1">
+            <Label>Status</Label>
+            <p className="text-sm text-muted-foreground">
+              {updater.statusMessage}
+            </p>
+            {updater.progress && updater.progress.total && (
+              <div className="mt-2">
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{
+                      width: `${Math.round(
+                        (updater.progress.downloaded / updater.progress.total) *
+                          100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {Math.round(updater.progress.downloaded / 1024)} KB /{" "}
+                  {Math.round(updater.progress.total / 1024)} KB
+                </p>
+              </div>
+            )}
+            {updater.error && (
+              <p className="text-sm text-destructive">{updater.error}</p>
+            )}
+          </div>
         </CardContent>
       </Card>
 

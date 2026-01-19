@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Resplendent Timer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.resplendent.timer",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -28,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,5 +36,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyMkY3MjdDODczNjVFNTAKUldSUVhqYUhmSEl2UWhNZGNsMGZTZDFKWTh6WXM5aE5nOGtwQ2lHN0R4N3VVUkZ4aVJnUUs3Rk8K",
+      "endpoints": [
+        "https://github.com/Resplendent-Data/timer/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
