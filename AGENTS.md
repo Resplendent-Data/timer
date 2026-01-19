@@ -7,12 +7,13 @@ Monitors user idle time and integrates with ClickUp to auto-stop timers.
 
 ```
 src/                    # React/TypeScript frontend
-  components/           # React components
-  hooks/                # Custom React hooks
-  lib/                  # Utilities (store, etc.)
+  components/           # React components (StatusIndicator, Settings, TimerControls)
+  components/ui/        # Reusable UI primitives (shadcn/ui style)
+  hooks/                # Custom React hooks (useIdleChecker, useUpdater)
+  lib/                  # Utilities (store.ts, notification.ts, utils.ts)
 src-tauri/              # Rust backend
   src/
-    idle/               # Platform-specific idle detection (macos.rs, linux.rs)
+    idle/               # Platform-specific idle detection (macos.rs, linux.rs, windows.rs)
     clickup.rs          # ClickUp API integration
     idle_monitor.rs     # Unified idle detection interface
     lib.rs              # Tauri commands and app setup
@@ -41,36 +42,44 @@ cargo fmt               # Format code
 ## Running Tests
 
 ```bash
-cd src-tauri && cargo test                                    # All tests
-cd src-tauri && cargo test test_idle_check_result_serialization  # Single test
-cd src-tauri && cargo test clickup::tests                     # Module tests
-cd src-tauri && cargo test -- --nocapture                     # With output
+# All Rust tests
+cd src-tauri && cargo test
+
+# Single test by name
+cd src-tauri && cargo test test_idle_check_result_serialization
+
+# Tests in a specific module
+cd src-tauri && cargo test clickup::tests
+cd src-tauri && cargo test idle::macos::tests
+
+# With stdout output
+cd src-tauri && cargo test -- --nocapture
+
+# Run specific test with output
+cd src-tauri && cargo test test_name -- --nocapture
 ```
 
 ## Code Style - TypeScript/React
 
-**Import Order:** React → external packages → internal modules → relative imports
+**Import Order:** React -> external packages -> @/ aliases -> relative imports
 ```typescript
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getSettings } from "../lib/store";
+import { Card } from "@/components/ui/card";
+import { sendNotification } from "../lib/notification";
 ```
 
-**Naming:**
-- Components: `PascalCase` (`StatusIndicator`)
+**Naming Conventions:**
+- Components: `PascalCase` (`StatusIndicator.tsx`)
 - Hooks: `camelCase` with `use` prefix (`useIdleChecker`)
-- Interfaces: `PascalCase` (`IdleStatus`)
-- CSS classes: BEM (`status-indicator__value--active`)
+- Interfaces/Types: `PascalCase` (`IdleStatus`, `AppSettings`)
+- Utility functions: `camelCase` (`formatDuration`, `getSettings`)
+- Files: `PascalCase` for components, `camelCase` for utilities
 
-**Types:**
-- Define interfaces for all component props
-- Explicit return types for hooks
-- Match Rust snake_case in API responses (`task_name`, not `taskName`)
-
-**Components:**
-- Function components with hooks only
-- JSDoc comment at top describing purpose
-- Named exports, not default exports
+**Type Patterns:**
+- Define interfaces for all props and API responses
+- Match Rust `snake_case` field names exactly (`task_name`, not `taskName`)
+- Use `Option<T>` in Rust = `T | null` in TypeScript
 
 **Error Handling:**
 ```typescript
@@ -84,20 +93,20 @@ try {
 
 ## Code Style - Rust
 
-**Import Order:** std → external crates → internal modules
+**Import Order:** std -> external crates -> crate modules
 ```rust
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use crate::idle_monitor;
 ```
 
-**Naming:**
+**Naming Conventions:**
 - Modules/files: `snake_case` (`idle_monitor.rs`)
-- Types/Structs: `PascalCase` (`IdleCheckResult`)
+- Types/Structs/Enums: `PascalCase` (`IdleCheckResult`)
 - Functions: `snake_case` (`get_idle_time_secs`)
 - Constants: `SCREAMING_SNAKE_CASE`
 
-**Structs:** Derive `Debug, Clone, Serialize, Deserialize` for API types
+**Struct Definitions:** Always derive standard traits for API types
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdleCheckResult {
@@ -108,7 +117,7 @@ pub struct IdleCheckResult {
 }
 ```
 
-**Tauri Commands:**
+**Tauri Commands:** Use doc comments, return Result<T, String>
 ```rust
 /// Brief description.
 #[tauri::command]
@@ -116,14 +125,13 @@ async fn command_name(param: String) -> Result<ReturnType, String> {
     do_something().map_err(|e| format!("Context: {}", e))?;
     Ok(result)
 }
+// Register in lib.rs: .invoke_handler(tauri::generate_handler![command_name])
 ```
-
-**Error Handling:** Return `Result<T, String>` from commands, add context to errors
 
 **Platform-Specific Code:**
 ```rust
 #[cfg(target_os = "macos")]
-pub async fn get_idle_secs() -> Result<u64, String> { ... }
+pub async fn platform_fn() -> Result<T, String> { ... }
 ```
 
 **Tests:**
@@ -143,22 +151,23 @@ mod tests {
 2. Register in `invoke_handler` in `lib.rs`
 3. Call from frontend: `invoke<ReturnType>("command_name", { args })`
 
-**Adding Features:**
-1. Rust: Add function, expose via Tauri command
-2. Frontend: Create interface matching Rust struct, call via `invoke`
-3. Types must match: Rust `snake_case` = TS `snake_case` (not camelCase)
+**Cross-Platform Notifications:** Use `lib/notification.ts` wrapper
+- macOS/Windows: Tauri notification plugin
+- Linux: `notify-send` command (GNOME 46+ workaround)
+
+**Persistent Storage:** Use `lib/store.ts` with `tauri-plugin-store`
 
 **State Management:**
-- React hooks for component state
-- `tauri-plugin-store` for persistent settings (see `lib/store.ts`)
-- No global state library needed
+- React hooks for component/local state
+- `tauri-plugin-store` for persistent settings
 
 ## Platform Notes
 
-- **macOS:** IOKit `HIDIdleTime` for idle detection, overlay title bar style
-- **Linux:** GNOME DBus → KDE DBus → X11 XScreenSaver fallback chain
+- **macOS:** IOKit `HIDIdleTime`, overlay title bar, `.app`/`.dmg` bundles
+- **Linux:** GNOME DBus -> KDE DBus -> X11 XScreenSaver fallback; `notify-send` for notifications
+- **Windows:** `GetLastInputInfo` for idle detection
 
-## Key Dependencies
+## Dependencies
 
-**Rust:** tauri v2, reqwest, serde, tokio
-**TypeScript:** @tauri-apps/api, @tauri-apps/plugin-store, @tauri-apps/plugin-notification, React 19
+**Rust:** tauri v2, reqwest, serde, tokio, tauri-plugin-notification, tauri-plugin-store
+**TypeScript:** React 19, @tauri-apps/api, @tauri-apps/plugin-*, Radix UI, Tailwind CSS
