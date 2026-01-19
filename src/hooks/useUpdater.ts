@@ -50,10 +50,11 @@ export function useUpdater(): UseUpdaterResult {
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState("0.0.0");
-  const [statusMessage, setStatusMessage] = useState("Ready");
+  const [statusMessage, setStatusMessage] = useState("You're up to date");
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isUpdatingRef = useRef(false);
+  const isCheckingRef = useRef(false);
+  const hasCheckedRef = useRef(false);
 
   // Get current version from Tauri
   useEffect(() => {
@@ -108,67 +109,84 @@ export function useUpdater(): UseUpdaterResult {
     }
   }, []);
 
-  const checkForUpdates = useCallback(async () => {
-    if (isChecking || isUpdatingRef.current) return;
+  const doCheck = useCallback(
+    async (isManual: boolean) => {
+      if (isCheckingRef.current || isUpdatingRef.current) return;
 
-    setIsChecking(true);
-    setError(null);
-    setStatusMessage("Checking for updates...");
-
-    try {
-      const update = await check();
-
-      if (update) {
-        console.log(
-          `Update available: ${update.version} (current: ${update.currentVersion})`
-        );
-
-        setUpdateInfo({
-          version: update.version,
-          currentVersion: update.currentVersion,
-          body: update.body ?? undefined,
-          date: update.date ?? undefined,
-        });
-
-        setStatusMessage(`Update available: v${update.version}`);
-        setIsChecking(false);
-
-        // Auto-download and install
-        await performUpdate(update);
-      } else {
-        console.log("No update available");
-        setUpdateInfo(null);
-        setStatusMessage("You're up to date");
-        setIsChecking(false);
+      isCheckingRef.current = true;
+      if (isManual) {
+        setIsChecking(true);
+        setStatusMessage("Checking for updates...");
       }
-    } catch (err) {
-      console.error("Update check failed:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      setStatusMessage("Update check failed");
-      setIsChecking(false);
-    }
-  }, [isChecking, performUpdate]);
+      setError(null);
 
-  // Check for updates on mount and set up interval
+      try {
+        const update = await check();
+
+        if (update) {
+          console.log(
+            `Update available: ${update.version} (current: ${update.currentVersion})`
+          );
+
+          setUpdateInfo({
+            version: update.version,
+            currentVersion: update.currentVersion,
+            body: update.body ?? undefined,
+            date: update.date ?? undefined,
+          });
+
+          setStatusMessage(`Update available: v${update.version}`);
+          setIsChecking(false);
+          isCheckingRef.current = false;
+
+          // Auto-download and install
+          await performUpdate(update);
+        } else {
+          console.log("No update available");
+          setUpdateInfo(null);
+          setStatusMessage("You're up to date");
+          setIsChecking(false);
+          isCheckingRef.current = false;
+        }
+      } catch (err) {
+        console.error("Update check failed:", err);
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        setStatusMessage("Update check failed");
+        setIsChecking(false);
+        isCheckingRef.current = false;
+      }
+    },
+    [performUpdate]
+  );
+
+  // Manual check wrapper
+  const checkForUpdates = useCallback(() => {
+    return doCheck(true);
+  }, [doCheck]);
+
+  // Check for updates on mount and set up interval (runs once)
   useEffect(() => {
+    // Prevent double-checking in React strict mode
+    if (hasCheckedRef.current) return;
+    hasCheckedRef.current = true;
+
     // Initial check after a short delay to let the app settle
     const initialTimeout = setTimeout(() => {
-      checkForUpdates();
+      doCheck(false);
     }, 3000);
 
     // Set up hourly check interval
-    intervalRef.current = setInterval(() => {
-      checkForUpdates();
+    const intervalId = setInterval(() => {
+      doCheck(false);
     }, UPDATE_CHECK_INTERVAL);
 
     return () => {
       clearTimeout(initialTimeout);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      clearInterval(intervalId);
     };
-  }, [checkForUpdates]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     isChecking,

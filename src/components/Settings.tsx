@@ -282,6 +282,7 @@ export function Settings({ onSave }: SettingsProps) {
               type="button"
               variant="outline"
               size="sm"
+              className="min-w-[140px]"
               onClick={() => updater.checkForUpdates()}
               disabled={updater.isChecking || updater.isUpdating}
             >
