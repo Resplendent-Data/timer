@@ -1,6 +1,6 @@
 [package]
 name = "resplendent-timer"
-version = "0.3.3"
+version = "0.4.0"
 description = "A Tauri App for tracking time with ClickUp integration"
 authors = ["you"]
 edition = "2021"
@@ -24,6 +24,9 @@ serde_json = "1"
 thiserror = "2"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]

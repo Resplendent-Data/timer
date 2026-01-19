@@ -3,7 +3,7 @@
 //! This module provides functions to interact with the ClickUp API
 //! to check and manage time entries.
 
-use crate::idle_monitor;
+use crate::{idle_monitor, stats};
 use serde::{Deserialize, Serialize};
 
 /// Result of checking idle status and potentially stopping a timer.
@@ -298,6 +298,7 @@ pub async fn check_and_stop_timer_impl(
     idle_threshold_secs: u64,
 ) -> Result<IdleCheckResult, String> {
     // Get current idle time
+    let now = chrono::Utc::now().timestamp();
     let idle_secs = idle_monitor::get_idle_time_secs().await?;
 
     // If not idle enough, return early
@@ -310,6 +311,9 @@ pub async fn check_and_stop_timer_impl(
             error: None,
         });
     }
+
+    // User exceeded idle threshold - record the idle event
+    stats::record_idle_event(now, idle_secs as i64, false, None, None);
 
     // User is idle, check for running timer using the dedicated endpoint
     let client = reqwest::Client::new();
@@ -362,6 +366,7 @@ pub async fn check_and_stop_timer_impl(
             if !stop_response.status().is_success() {
                 let status = stop_response.status();
                 let body = stop_response.text().await.unwrap_or_default();
+                stats::record_idle_event(now, idle_secs as i64, false, Some(task_name.clone()), task_id.clone());
                 return Ok(IdleCheckResult {
                     stopped: false,
                     task_name: Some(task_name),
@@ -371,6 +376,7 @@ pub async fn check_and_stop_timer_impl(
                 });
             }
 
+            stats::record_idle_event(now, idle_secs as i64, true, Some(task_name.clone()), task_id.clone());
             return Ok(IdleCheckResult {
                 stopped: true,
                 task_name: Some(task_name),
@@ -381,7 +387,8 @@ pub async fn check_and_stop_timer_impl(
         }
     }
 
-    // No running timer found
+    // No running timer found - record that we went idle but no timer was active
+    stats::record_idle_event(now, idle_secs as i64, false, None, None);
     Ok(IdleCheckResult {
         stopped: false,
         task_name: None,

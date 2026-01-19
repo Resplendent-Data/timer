@@ -13,6 +13,7 @@ import { useIdleChecker } from "./hooks/useIdleChecker";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
+import { Stats } from "./components/Stats";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { getSettings } from "./lib/store";
@@ -84,14 +85,19 @@ function App() {
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 flex flex-col min-h-full">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-            <TabsList className="grid w-full grid-cols-2 mb-6 shrink-0">
+            <TabsList className="grid w-full grid-cols-3 mb-6 shrink-0">
               <TabsTrigger value="status">Status</TabsTrigger>
+              <TabsTrigger value="stats">Stats</TabsTrigger>
               <TabsTrigger value="settings">Settings</TabsTrigger>
             </TabsList>
 
             <TabsContent value="status" className="space-y-6 mt-0 flex-1">
               <StatusIndicator status={idleStatus} />
               <TimerControls status={idleStatus} />
+            </TabsContent>
+
+            <TabsContent value="stats" className="mt-0 flex-1">
+              <Stats />
             </TabsContent>
 
             <TabsContent value="settings" className="mt-0 flex-1">

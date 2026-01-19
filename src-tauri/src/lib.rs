@@ -6,10 +6,12 @@
 mod clickup;
 mod idle;
 mod idle_monitor;
+mod stats;
 
 use std::sync::Mutex;
 
 use clickup::{IdleCheckResult, RunningTimerInfo, TaskSearchResult};
+use stats::ProductivityStats;
 use tauri::{
     include_image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -160,6 +162,22 @@ async fn send_notification_linux(_title: String, _body: String) -> Result<(), St
     Err("send_notification_linux is only available on Linux".to_string())
 }
 
+#[tauri::command]
+async fn get_productivity_stats() -> Result<ProductivityStats, String> {
+    stats::get_productivity_stats().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn record_idle_event(
+    started_at: i64,
+    duration_secs: i64,
+    timer_stopped: bool,
+    task_name: Option<String>,
+    task_id: Option<String>,
+) {
+    stats::record_idle_event(started_at, duration_secs, timer_stopped, task_name, task_id);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -172,6 +190,9 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            stats::init_database();
+
             // Create system tray menu items
             let timer_display =
                 MenuItem::with_id(app, "timer_display", "No timer running", false, None::<&str>)?;
@@ -260,6 +281,8 @@ pub fn run() {
             stop_timer,
             update_tray_timer_display,
             send_notification_linux,
+            get_productivity_stats,
+            record_idle_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
