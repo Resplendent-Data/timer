@@ -40,6 +40,11 @@ windows = { version = "0.58", features = [
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
+# For sleep/wake detection via NSWorkspace notifications
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSNotification", "NSString", "NSThread", "block2"] }
+objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "NSWorkspace"] }
+block2 = "0.6"
 
 # Linux-specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]

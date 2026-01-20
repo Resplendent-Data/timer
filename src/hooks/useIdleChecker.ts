@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { sendNotification } from "../lib/notification";
 import { getSettings, addRecentTask } from "../lib/store";
 
@@ -284,10 +285,66 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
 
     setStatus((prev) => ({ ...prev, isRunning: true }));
 
+    // Listen for system sleep events (macOS lid close / display sleep)
+    let unlistenSleep: UnlistenFn | null = null;
+
+    const setupSleepListener = async () => {
+      unlistenSleep = await listen("system-sleep", async () => {
+        console.log("[useIdleChecker] System sleep detected, stopping timer");
+        try {
+          const settings = await getSettings();
+          if (settings?.clickupApiKey && settings?.clickupTeamId) {
+            // Get the current timer info before stopping
+            const timerInfo = await invoke<RunningTimerInfo | null>(
+              "get_running_timer_info",
+              {
+                apiKey: settings.clickupApiKey,
+                teamId: settings.clickupTeamId,
+              }
+            );
+
+            if (timerInfo) {
+              // Stop the timer
+              await invoke("stop_timer", {
+                apiKey: settings.clickupApiKey,
+                teamId: settings.clickupTeamId,
+              });
+
+              // Show notification
+              await sendNotification({
+                title: "Timer Stopped",
+                body: `Timer stopped on "${timerInfo.name}" because your Mac went to sleep`,
+              });
+
+              // Update status
+              setStatus((prev) => ({
+                ...prev,
+                lastStoppedAt: new Date(),
+                lastStoppedTaskName: timerInfo.name,
+                lastStoppedTaskId: timerInfo.task_id,
+                runningTaskName: null,
+                runningTaskStartMs: null,
+              }));
+
+              // Update tray display
+              await updateTrayDisplay(null, null);
+            }
+          }
+        } catch (error) {
+          console.error("[useIdleChecker] Failed to stop timer on sleep:", error);
+        }
+      });
+    };
+
+    setupSleepListener();
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+      if (unlistenSleep) {
+        unlistenSleep();
       }
       setStatus((prev) => ({ ...prev, isRunning: false }));
     };

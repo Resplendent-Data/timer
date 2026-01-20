@@ -3350,12 +3350,16 @@ dependencies = [
 
 [[package]]
 name = "resplendent-timer"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
+ "block2",
  "chrono",
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "dirs 5.0.1",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "reqwest",
  "rusqlite",
  "serde",

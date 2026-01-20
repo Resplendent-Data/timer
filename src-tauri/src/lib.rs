@@ -193,6 +193,15 @@ pub fn run() {
 
             stats::init_database();
 
+            // Start macOS sleep observer (detects lid close / display sleep)
+            #[cfg(target_os = "macos")]
+            {
+                let app_handle = app.handle().clone();
+                if let Err(e) = idle::macos_sleep::start_sleep_observer(app_handle) {
+                    eprintln!("Failed to start sleep observer: {}", e);
+                }
+            }
+
             // Create system tray menu items
             let timer_display =
                 MenuItem::with_id(app, "timer_display", "No timer running", false, None::<&str>)?;
