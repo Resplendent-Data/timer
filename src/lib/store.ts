@@ -11,6 +11,14 @@ import { LazyStore } from "@tauri-apps/plugin-store";
 const store = new LazyStore("settings.json");
 
 /**
+ * Widget position for the always-on-top timer widget.
+ */
+export interface WidgetPosition {
+  x: number;
+  y: number;
+}
+
+/**
  * Application settings stored securely.
  */
 export interface AppSettings {
@@ -26,6 +34,8 @@ export interface AppSettings {
   noTimerWarningMinutes: number;
   /** Whether to repeat the warning at intervals (vs once per session) */
   noTimerWarningRepeat: boolean;
+  /** Whether to show the always-on-top timer widget */
+  widgetEnabled: boolean;
 }
 
 /**
@@ -60,6 +70,8 @@ export async function getSettings(): Promise<AppSettings | null> {
     return null;
   }
 
+  const widgetEnabled = await store.get<boolean>("widgetEnabled");
+
   return {
     clickupApiKey: apiKey,
     clickupTeamId: teamId,
@@ -67,6 +79,7 @@ export async function getSettings(): Promise<AppSettings | null> {
     noTimerWarningEnabled: noTimerWarningEnabled ?? true,
     noTimerWarningMinutes: noTimerWarningMinutes ?? 10,
     noTimerWarningRepeat: noTimerWarningRepeat ?? false,
+    widgetEnabled: widgetEnabled ?? false,
   };
 }
 
@@ -82,6 +95,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("noTimerWarningEnabled", settings.noTimerWarningEnabled);
   await store.set("noTimerWarningMinutes", settings.noTimerWarningMinutes);
   await store.set("noTimerWarningRepeat", settings.noTimerWarningRepeat);
+  await store.set("widgetEnabled", settings.widgetEnabled);
   await store.save();
 }
 
@@ -164,4 +178,63 @@ export async function removeRecentTask(taskId: string): Promise<void> {
   const filtered = existing.filter((t) => t.id !== taskId);
   await store.set("recentTasks", filtered);
   await store.save();
+}
+
+/**
+ * Get the saved widget position.
+ *
+ * @returns The widget position, or null if not saved
+ */
+export async function getWidgetPosition(): Promise<WidgetPosition | null> {
+  try {
+    const position = await store.get<WidgetPosition>("widgetPosition");
+    return position ?? null;
+  } catch (err) {
+    console.error("[store] Error getting widget position:", err);
+    return null;
+  }
+}
+
+/**
+ * Save the widget position.
+ *
+ * @param position - The position to save
+ */
+export async function saveWidgetPosition(position: WidgetPosition): Promise<void> {
+  try {
+    // Only save if position is reasonable (on screen)
+    if (position.x >= 0 && position.x < 5000 && position.y >= 0 && position.y < 2000) {
+      await store.set("widgetPosition", position);
+      await store.save();
+    }
+  } catch (err) {
+    console.error("[store] Error saving widget position:", err);
+  }
+}
+
+/**
+ * Clear the saved widget position.
+ */
+export async function clearWidgetPosition(): Promise<void> {
+  try {
+    await store.delete("widgetPosition");
+    await store.save();
+  } catch (err) {
+    console.error("[store] Error clearing widget position:", err);
+  }
+}
+
+/**
+ * Get just the widget enabled setting without requiring full config.
+ * This is used during app startup to determine if we should show the widget.
+ *
+ * @returns Whether the widget is enabled
+ */
+export async function isWidgetEnabled(): Promise<boolean> {
+  try {
+    const enabled = await store.get<boolean>("widgetEnabled");
+    return enabled ?? false;
+  } catch {
+    return false;
+  }
 }

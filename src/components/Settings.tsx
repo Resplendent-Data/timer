@@ -27,6 +27,7 @@ export function Settings({ onSave }: SettingsProps) {
     noTimerWarningEnabled: true,
     noTimerWarningMinutes: 10,
     noTimerWarningRepeat: false,
+    widgetEnabled: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -262,6 +263,36 @@ export function Settings({ onSave }: SettingsProps) {
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Display Section */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Display</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Floating Widget */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="widgetEnabled">
+                Floating timer widget
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Show a small always-on-top window with elapsed time
+              </p>
+            </div>
+            <Switch
+              id="widgetEnabled"
+              checked={settings.widgetEnabled}
+              onCheckedChange={(checked) =>
+                setSettings({
+                  ...settings,
+                  widgetEnabled: checked,
+                })
+              }
+            />
+          </div>
         </CardContent>
       </Card>
 

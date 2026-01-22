@@ -5,7 +5,7 @@
  * for configuring ClickUp integration.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { checkNotificationPermission } from "./lib/notification";
@@ -16,13 +16,41 @@ import { TimerControls } from "./components/TimerControls";
 import { Stats } from "./components/Stats";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { getSettings } from "./lib/store";
+import { getSettings, getWidgetPosition, saveWidgetPosition, clearWidgetPosition } from "./lib/store";
 
 function App() {
   const [activeTab, setActiveTab] = useState("status");
+  const [widgetEnabled, setWidgetEnabled] = useState(false);
 
   // Start the background idle checker (runs every minute)
   const idleStatus = useIdleChecker(60_000);
+
+  // Create or close the widget window based on settings
+  const updateWidgetState = useCallback(async (enabled: boolean) => {
+    try {
+      if (enabled) {
+        // Get saved position and validate it
+        const position = await getWidgetPosition();
+        let x: number | null = null;
+        let y: number | null = null;
+        
+        // Only use position if it's within reasonable screen bounds
+        if (position && position.x >= 0 && position.x < 5000 && position.y >= 0 && position.y < 2000) {
+          x = position.x;
+          y = position.y;
+        } else if (position) {
+          // Clear invalid position
+          await clearWidgetPosition();
+        }
+        
+        await invoke("create_widget_window", { x, y });
+      } else {
+        await invoke("close_widget_window");
+      }
+    } catch (error) {
+      console.error("Failed to update widget state:", error);
+    }
+  }, []);
 
   // Request notification permission on app startup (no-op on Linux)
   useEffect(() => {
@@ -30,6 +58,61 @@ function App() {
       console.error("Failed to request notification permission:", error);
     });
   }, []);
+
+  // Load widget setting on startup and create widget if enabled
+  useEffect(() => {
+    const loadWidgetSetting = async () => {
+      try {
+        const settings = await getSettings();
+        if (settings?.widgetEnabled) {
+          setWidgetEnabled(true);
+          await updateWidgetState(true);
+        }
+      } catch (error) {
+        console.error("Failed to load widget setting:", error);
+      }
+    };
+
+    loadWidgetSetting();
+  }, [updateWidgetState]);
+
+  // Listen for widget position save events from Rust
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    const setup = async () => {
+      unlisten = await listen<[number, number]>("save-widget-position", async (event) => {
+        const [x, y] = event.payload;
+        await saveWidgetPosition({ x, y });
+      });
+    };
+
+    setup();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  // Watch for settings changes to update widget
+  useEffect(() => {
+    const checkWidgetSetting = async () => {
+      try {
+        const settings = await getSettings();
+        const newEnabled = settings?.widgetEnabled ?? false;
+        if (newEnabled !== widgetEnabled) {
+          setWidgetEnabled(newEnabled);
+          await updateWidgetState(newEnabled);
+        }
+      } catch (error) {
+        console.error("Failed to check widget setting:", error);
+      }
+    };
+
+    // Check periodically (every 2 seconds) for settings changes
+    const interval = setInterval(checkWidgetSetting, 2000);
+    return () => clearInterval(interval);
+  }, [widgetEnabled, updateWidgetState]);
 
   // Handle tray menu events
   useEffect(() => {

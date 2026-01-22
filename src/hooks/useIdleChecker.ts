@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { listen, emit, UnlistenFn } from "@tauri-apps/api/event";
 import { sendNotification } from "../lib/notification";
 import { getSettings, addRecentTask } from "../lib/store";
 
@@ -88,6 +88,23 @@ async function updateTrayDisplay(
     }
   } catch (e) {
     console.error("Failed to update tray display:", e);
+  }
+}
+
+/**
+ * Emit timer state to the widget window.
+ */
+async function emitWidgetUpdate(
+  taskName: string | null,
+  startTimeMs: number | null
+): Promise<void> {
+  try {
+    await emit("widget-timer-update", {
+      taskName,
+      startTimeMs,
+    });
+  } catch (e) {
+    // Widget may not exist, ignore errors
   }
 }
 
@@ -216,6 +233,12 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
             timerInfo?.start_time_ms ?? null
           );
 
+          // Update widget with current timer info
+          await emitWidgetUpdate(
+            timerInfo?.name ?? null,
+            timerInfo?.start_time_ms ?? null
+          );
+
           // Check if we should warn about no timer running
           if (
             !hasRunningTimer &&
@@ -328,6 +351,8 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
 
               // Update tray display
               await updateTrayDisplay(null, null);
+              // Update widget
+              await emitWidgetUpdate(null, null);
             }
           }
         } catch (error) {
@@ -363,10 +388,17 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
       const taskName = status.runningTaskName;
       const startMs = status.runningTaskStartMs;
 
+      // Update immediately
+      emitWidgetUpdate(taskName, startMs);
+
       // Update every 10 seconds
       trayIntervalRef.current = window.setInterval(() => {
         updateTrayDisplay(taskName, startMs);
+        emitWidgetUpdate(taskName, startMs);
       }, 10_000);
+    } else {
+      // No timer running - update widget immediately
+      emitWidgetUpdate(null, null);
     }
 
     return () => {

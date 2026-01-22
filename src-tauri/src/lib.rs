@@ -16,6 +16,7 @@ use tauri::{
     include_image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
+    webview::WebviewWindowBuilder,
     Emitter, Manager,
 };
 
@@ -178,6 +179,84 @@ fn record_idle_event(
     stats::record_idle_event(started_at, duration_secs, timer_stopped, task_name, task_id);
 }
 
+/// Create the always-on-top widget window.
+///
+/// # Arguments
+///
+/// * `x` - Optional x position (uses default if not provided)
+/// * `y` - Optional y position (uses default if not provided)
+#[tauri::command]
+async fn create_widget_window(
+    app: tauri::AppHandle,
+    x: Option<i32>,
+    y: Option<i32>,
+) -> Result<(), String> {
+    // Check if widget already exists
+    if app.get_webview_window("widget").is_some() {
+        return Ok(());
+    }
+
+    let mut builder = WebviewWindowBuilder::new(&app, "widget", tauri::WebviewUrl::App("/widget.html".into()))
+        .title("Timer Widget")
+        .inner_size(120.0, 36.0)
+        .decorations(false)
+        .always_on_top(true)
+        .resizable(false)
+        .skip_taskbar(true)
+        .visible(true);
+
+    // Set position if provided and reasonable (within typical screen bounds)
+    // Ignore positions that are likely off-screen
+    if let (Some(px), Some(py)) = (x, y) {
+        if px >= 0 && px < 5000 && py >= 0 && py < 2000 {
+            builder = builder.position(px as f64, py as f64);
+        }
+    }
+
+    let widget_window = builder.build().map_err(|e| e.to_string())?;
+
+    // If main window is currently visible and focused, hide the widget initially
+    if let Some(main_window) = app.get_webview_window("main") {
+        if main_window.is_focused().unwrap_or(false) {
+            let _ = widget_window.hide();
+        }
+    }
+
+    Ok(())
+}
+
+/// Close the widget window.
+#[tauri::command]
+async fn close_widget_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(widget) = app.get_webview_window("widget") {
+        widget.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Show the main window and bring it to focus.
+#[tauri::command]
+async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Save the widget position (called from frontend when widget is moved).
+#[tauri::command]
+async fn save_widget_position(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
+    // Emit event to frontend to save position in store
+    app.emit("save-widget-position", (x, y))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -265,14 +344,29 @@ pub fn run() {
                 .build(app)?;
 
             // Handle window close - minimize to tray instead of quitting
+            // Also handle focus events for widget visibility
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
+                let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // Prevent the window from closing
-                        api.prevent_close();
-                        // Hide the window instead
-                        let _ = window_clone.hide();
+                    match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            // Prevent the window from closing
+                            api.prevent_close();
+                            // Hide the window instead
+                            let _ = window_clone.hide();
+                        }
+                        tauri::WindowEvent::Focused(focused) => {
+                            // Show/hide widget based on main window focus
+                            if let Some(widget) = app_handle.get_webview_window("widget") {
+                                if *focused {
+                                    let _ = widget.hide();
+                                } else {
+                                    let _ = widget.show();
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 });
             }
@@ -292,6 +386,10 @@ pub fn run() {
             send_notification_linux,
             get_productivity_stats,
             record_idle_event,
+            create_widget_window,
+            close_widget_window,
+            show_main_window,
+            save_widget_position,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
