@@ -22,11 +22,22 @@ interface IdleCheckResult {
   error: string | null;
 }
 
+/** Time entry tag from ClickUp */
+interface TimeEntryTag {
+  name: string;
+  tag_bg: string | null;
+  tag_fg: string | null;
+}
+
 /** Info about the running timer from Rust */
 interface RunningTimerInfo {
   name: string;
   task_id: string | null;
   start_time_ms: number;
+  description: string | null;
+  is_manual: boolean;
+  tags: TimeEntryTag[];
+  billable: boolean;
 }
 
 /** Current status of the idle checker */
@@ -39,6 +50,14 @@ export interface IdleStatus {
   runningTaskName: string | null;
   /** Start time of the running timer (for elapsed time calculation) */
   runningTaskStartMs: number | null;
+  /** Whether the running timer is a manual timer (no task) */
+  runningTimerIsManual: boolean;
+  /** Description of the running timer (for manual timers) */
+  runningTimerDescription: string | null;
+  /** Tags on the running timer */
+  runningTimerTags: TimeEntryTag[];
+  /** Whether the running timer is billable */
+  runningTimerBillable: boolean;
   /** Last time a timer was stopped */
   lastStoppedAt: Date | null;
   /** Last stopped task name */
@@ -130,6 +149,10 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     currentIdleSeconds: 0,
     runningTaskName: null,
     runningTaskStartMs: null,
+    runningTimerIsManual: false,
+    runningTimerDescription: null,
+    runningTimerTags: [],
+    runningTimerBillable: false,
     lastStoppedAt: null,
     lastStoppedTaskName: null,
     lastStoppedTaskId: null,
@@ -183,6 +206,10 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           lastStoppedTaskId: result.task_id,
           runningTaskName: null,
           runningTaskStartMs: null,
+          runningTimerIsManual: false,
+          runningTimerDescription: null,
+          runningTimerTags: [],
+          runningTimerBillable: false,
         }));
       }
 
@@ -225,6 +252,10 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
             ...prev,
             runningTaskName: timerInfo?.name ?? null,
             runningTaskStartMs: timerInfo?.start_time_ms ?? null,
+            runningTimerIsManual: timerInfo?.is_manual ?? false,
+            runningTimerDescription: timerInfo?.description ?? null,
+            runningTimerTags: timerInfo?.tags ?? [],
+            runningTimerBillable: timerInfo?.billable ?? false,
           }));
 
           // Update tray display with current timer info
@@ -347,6 +378,10 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
                 lastStoppedTaskId: timerInfo.task_id,
                 runningTaskName: null,
                 runningTaskStartMs: null,
+                runningTimerIsManual: false,
+                runningTimerDescription: null,
+                runningTimerTags: [],
+                runningTimerBillable: false,
               }));
 
               // Update tray display

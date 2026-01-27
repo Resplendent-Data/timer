@@ -125,17 +125,43 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
 
       {/* Running Timer */}
       <Card>
-        <CardContent className="flex items-center justify-between py-3">
-          <span className="text-sm font-medium">Running Timer</span>
-          <span
-            className={
-              status.runningTaskName
-                ? "text-sm font-medium text-primary"
-                : "text-sm text-muted-foreground italic"
-            }
-          >
-            {status.runningTaskName || "No timer running"}
-          </span>
+        <CardContent className="py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Running Timer</span>
+            <span
+              className={
+                status.runningTaskName
+                  ? "text-sm font-medium text-primary"
+                  : "text-sm text-muted-foreground italic"
+              }
+            >
+              {status.runningTaskName || "No timer running"}
+            </span>
+          </div>
+          {/* Show additional info for running timers */}
+          {status.runningTaskName && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {status.runningTimerIsManual && (
+                <Badge variant="secondary" className="text-xs">Manual</Badge>
+              )}
+              {status.runningTimerBillable && (
+                <Badge variant="outline" className="text-xs border-green-500 text-green-600">Billable</Badge>
+              )}
+              {status.runningTimerTags.map((tag) => (
+                <span
+                  key={tag.name}
+                  className="inline-flex items-center rounded-md px-1.5 py-0 text-[10px] font-medium"
+                  style={{
+                    backgroundColor: tag.tag_bg || "#888888",
+                    color: "#ffffff",
+                    border: `1px solid ${tag.tag_bg || "#888888"}`,
+                  }}
+                >
+                  {tag.name}
+                </span>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

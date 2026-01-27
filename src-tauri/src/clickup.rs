@@ -24,12 +24,20 @@ pub struct IdleCheckResult {
 /// Information about a currently running timer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunningTimerInfo {
-    /// Name of the task
+    /// Name of the task or description for manual timers
     pub name: String,
     /// Task ID (None for manual timers without a task)
     pub task_id: Option<String>,
     /// Start time in milliseconds since epoch (for calculating elapsed time)
     pub start_time_ms: i64,
+    /// Description of the time entry (for manual timers)
+    pub description: Option<String>,
+    /// Whether this is a manual timer (no task attached)
+    pub is_manual: bool,
+    /// Tags on this time entry
+    pub tags: Vec<TimeEntryTag>,
+    /// Whether this time entry is billable
+    pub billable: bool,
 }
 
 /// Response from ClickUp "Get running time entry" API
@@ -54,6 +62,12 @@ struct RunningTimeEntry {
     /// Start time in milliseconds since epoch
     #[serde(default)]
     start: String,
+    /// Tags on this time entry
+    #[serde(default)]
+    tags: Vec<TimeEntryTag>,
+    /// Whether this time entry is billable
+    #[serde(default)]
+    billable: bool,
 }
 
 /// A ClickUp task reference
@@ -105,6 +119,16 @@ pub struct TaskTag {
     pub tag_fg: Option<String>,
     #[serde(default)]
     pub tag_bg: Option<String>,
+}
+
+/// A tag that can be applied to time entries (workspace-level)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeEntryTag {
+    pub name: String,
+    #[serde(default)]
+    pub tag_bg: Option<String>,
+    #[serde(default)]
+    pub tag_fg: Option<String>,
 }
 
 /// A ClickUp task search result with detailed information
@@ -222,11 +246,62 @@ pub async fn search_tasks(
     Ok(tasks)
 }
 
+/// Response from ClickUp "Get time entry tags" API
+#[derive(Debug, Deserialize)]
+struct TimeEntryTagsResponse {
+    data: Vec<TimeEntryTag>,
+}
+
+/// Get all time entry tags for a workspace.
+///
+/// These are workspace-level tags that can be applied to time entries.
+pub async fn get_time_entry_tags(
+    api_key: String,
+    team_id: String,
+) -> Result<Vec<TimeEntryTag>, String> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/tags",
+        team_id
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch time entry tags: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error ({}): {}", status, body));
+    }
+
+    let tags_response: TimeEntryTagsResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    Ok(tags_response.data)
+}
+
 /// Start a time entry for a specific task.
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+/// * `task_id` - The task ID to start the timer for
+/// * `billable` - Whether the time entry is billable
+/// * `tags` - Optional list of tag names to apply
 pub async fn start_timer(
     api_key: String,
     team_id: String,
     task_id: String,
+    billable: bool,
+    tags: Option<Vec<String>>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
     let url = format!(
@@ -234,9 +309,22 @@ pub async fn start_timer(
         team_id
     );
 
-    let body = serde_json::json!({
-        "tid": task_id
+    // Build the request body with task ID
+    let mut body = serde_json::json!({
+        "tid": task_id,
+        "billable": billable
     });
+
+    // Add tags if provided (format: [{"name": "tag1"}, {"name": "tag2"}])
+    if let Some(tag_names) = tags {
+        if !tag_names.is_empty() {
+            let tag_objects: Vec<serde_json::Value> = tag_names
+                .into_iter()
+                .map(|name| serde_json::json!({"name": name}))
+                .collect();
+            body["tags"] = serde_json::Value::Array(tag_objects);
+        }
+    }
 
     let response = client
         .post(&url)
@@ -271,6 +359,69 @@ pub async fn stop_timer(api_key: String, team_id: String) -> Result<(), String> 
         .send()
         .await
         .map_err(|e| format!("Failed to stop timer: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error ({}): {}", status, body));
+    }
+
+    Ok(())
+}
+
+/// Start a manual time entry (without a linked task).
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+/// * `description` - Optional description for the time entry
+/// * `billable` - Whether the time entry is billable
+/// * `tags` - Optional list of tag names to apply
+pub async fn start_manual_timer(
+    api_key: String,
+    team_id: String,
+    description: Option<String>,
+    billable: bool,
+    tags: Option<Vec<String>>,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/start",
+        team_id
+    );
+
+    // Build the request body - no "tid" field means manual timer
+    let mut body = serde_json::json!({
+        "billable": billable
+    });
+
+    // Add description if provided
+    if let Some(desc) = description {
+        if !desc.is_empty() {
+            body["description"] = serde_json::Value::String(desc);
+        }
+    }
+
+    // Add tags if provided (format: [{"name": "tag1"}, {"name": "tag2"}])
+    if let Some(tag_names) = tags {
+        if !tag_names.is_empty() {
+            let tag_objects: Vec<serde_json::Value> = tag_names
+                .into_iter()
+                .map(|name| serde_json::json!({"name": name}))
+                .collect();
+            body["tags"] = serde_json::Value::Array(tag_objects);
+        }
+    }
+
+    let response = client
+        .post(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to start manual timer: {}", e))?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -492,10 +643,20 @@ pub async fn get_running_timer_info(
 
     let info = running_response.data.and_then(|entry| {
         if entry.is_running() {
+            let is_manual = entry.task.is_none();
+            let description = if entry.description.is_empty() {
+                None
+            } else {
+                Some(entry.description.clone())
+            };
             Some(RunningTimerInfo {
                 name: entry.display_name(),
                 task_id: entry.task_id(),
                 start_time_ms: entry.start_time_ms().unwrap_or(0),
+                description,
+                is_manual,
+                tags: entry.tags,
+                billable: entry.billable,
             })
         } else {
             None

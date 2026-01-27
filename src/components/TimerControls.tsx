@@ -5,8 +5,11 @@
  * - Search for tasks with auto-complete (debounced)
  * - Recent tasks list for quick access
  * - Resume last stopped timer
+ * - Start manual timer (without a task)
  * - Keyboard navigation
  * - Task details (project path, status, tags)
+ * - Optional tag and billable settings via modal
+ * - Shift+click for quick start (skips modal)
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -24,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { StartTimerModal, TimeEntryTag, TaskInfo } from "./StartTimerModal";
 
 /** Tag on a task */
 interface TaskTag {
@@ -69,6 +73,11 @@ export function TimerControls({ status }: TimerControlsProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>([]);
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTask, setModalTask] = useState<TaskInfo | null>(null);
+  const [cachedTags, setCachedTags] = useState<TimeEntryTag[] | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -159,7 +168,8 @@ export function TimerControls({ status }: TimerControlsProps) {
     }
   }, [selectedIndex]);
 
-  const startTimerForTask = useCallback(
+  // Quick start timer (no modal) - used for Resume and Shift+click
+  const quickStartTimer = useCallback(
     async (taskId: string, taskName: string, projectPath?: string) => {
       setIsProcessing(true);
       setError(null);
@@ -192,28 +202,71 @@ export function TimerControls({ status }: TimerControlsProps) {
     [status]
   );
 
-  const handleStartTimer = useCallback(
-    async (task: TaskSearchResult) => {
+  // Handle timer started from modal
+  const handleTimerStarted = useCallback(
+    async (task: TaskInfo | null, _description?: string) => {
+      // Clear search and refresh status
+      setSearchQuery("");
+      setSearchResults([]);
+      setSelectedIndex(-1);
+
+      // If it was a task timer, add to recent tasks
+      if (task) {
+        await addRecentTask({ id: task.id, name: task.name, projectPath: task.projectPath });
+        setRecentTasks(await getRecentTasks());
+      }
+
+      await status.refresh();
+    },
+    [status]
+  );
+
+  // Handle click on task - opens modal unless Shift is held
+  const handleTaskClick = useCallback(
+    (task: TaskSearchResult, event: React.MouseEvent) => {
       const projectPath = buildProjectPath(task);
-      await startTimerForTask(task.id, task.name, projectPath);
+      
+      if (event.shiftKey) {
+        // Quick start (no modal)
+        quickStartTimer(task.id, task.name, projectPath);
+      } else {
+        // Open modal with task
+        setModalTask({ id: task.id, name: task.name, projectPath });
+        setModalOpen(true);
+      }
     },
-    [startTimerForTask]
+    [quickStartTimer]
   );
 
-  const handleStartFromRecent = useCallback(
-    async (task: RecentTask) => {
-      await startTimerForTask(task.id, task.name, task.projectPath);
+  // Handle click on recent task - opens modal unless Shift is held
+  const handleRecentTaskClick = useCallback(
+    (task: RecentTask, event: React.MouseEvent) => {
+      if (event.shiftKey) {
+        // Quick start (no modal)
+        quickStartTimer(task.id, task.name, task.projectPath);
+      } else {
+        // Open modal with task
+        setModalTask({ id: task.id, name: task.name, projectPath: task.projectPath });
+        setModalOpen(true);
+      }
     },
-    [startTimerForTask]
+    [quickStartTimer]
   );
 
+  // Resume always does quick start (no modal)
   const handleResumeTimer = useCallback(async () => {
     if (!status.lastStoppedTaskId || !status.lastStoppedTaskName) return;
-    await startTimerForTask(
+    await quickStartTimer(
       status.lastStoppedTaskId,
       status.lastStoppedTaskName
     );
-  }, [status.lastStoppedTaskId, status.lastStoppedTaskName, startTimerForTask]);
+  }, [status.lastStoppedTaskId, status.lastStoppedTaskName, quickStartTimer]);
+
+  // Open manual timer modal
+  const handleStartManualTimer = useCallback(() => {
+    setModalTask(null); // null = manual timer
+    setModalOpen(true);
+  }, []);
 
   const handleStopTimer = useCallback(async () => {
     setIsProcessing(true);
@@ -254,7 +307,16 @@ export function TimerControls({ status }: TimerControlsProps) {
         case "Enter":
           e.preventDefault();
           if (selectedIndex >= 0 && selectedIndex < searchResults.length) {
-            handleStartTimer(searchResults[selectedIndex]);
+            const task = searchResults[selectedIndex];
+            const projectPath = buildProjectPath(task);
+            if (e.shiftKey) {
+              // Shift+Enter = quick start
+              quickStartTimer(task.id, task.name, projectPath);
+            } else {
+              // Enter = open modal
+              setModalTask({ id: task.id, name: task.name, projectPath });
+              setModalOpen(true);
+            }
           }
           break;
         case "Escape":
@@ -265,7 +327,7 @@ export function TimerControls({ status }: TimerControlsProps) {
           break;
       }
     },
-    [searchResults, selectedIndex, handleStartTimer]
+    [searchResults, selectedIndex, quickStartTimer]
   );
 
   const handleClearSearch = useCallback(() => {
@@ -301,6 +363,16 @@ export function TimerControls({ status }: TimerControlsProps) {
 
   return (
     <div className="space-y-4">
+      {/* Start Timer Modal */}
+      <StartTimerModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        task={modalTask}
+        cachedTags={cachedTags}
+        onTagsFetched={setCachedTags}
+        onTimerStarted={handleTimerStarted}
+      />
+
       {/* Resume last stopped timer */}
       {status.lastStoppedTaskId && status.lastStoppedTaskName && (
         <Button
@@ -330,7 +402,7 @@ export function TimerControls({ status }: TimerControlsProps) {
                 key={task.id}
                 variant="ghost"
                 className="w-full justify-start text-left h-auto py-2 px-3"
-                onClick={() => handleStartFromRecent(task)}
+                onClick={(e) => handleRecentTaskClick(task, e)}
                 disabled={isProcessing}
               >
                 <div className="flex flex-col items-start overflow-hidden">
@@ -406,7 +478,7 @@ export function TimerControls({ status }: TimerControlsProps) {
                       ? "bg-accent border-l-2 border-l-primary"
                       : "hover:bg-muted/50"
                   }`}
-                  onClick={() => handleStartTimer(task)}
+                  onClick={(e) => handleTaskClick(task, e)}
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
                   <div className="flex items-center gap-2 flex-wrap">
@@ -430,18 +502,17 @@ export function TimerControls({ status }: TimerControlsProps) {
                   {task.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {task.tags.map((tag) => (
-                        <Badge
+                        <span
                           key={tag.name}
-                          variant="outline"
-                          className="text-[10px] px-1.5 py-0"
+                          className="inline-flex items-center rounded-md px-1.5 py-0 text-[10px] font-medium"
                           style={{
-                            backgroundColor: tag.tag_bg || undefined,
-                            color: tag.tag_fg || undefined,
-                            borderColor: tag.tag_bg || undefined,
+                            backgroundColor: tag.tag_bg || "#888888",
+                            color: "#ffffff",
+                            border: `1px solid ${tag.tag_bg || "#888888"}`,
                           }}
                         >
                           {tag.name}
-                        </Badge>
+                        </span>
                       ))}
                     </div>
                   )}
@@ -452,11 +523,23 @@ export function TimerControls({ status }: TimerControlsProps) {
           <Separator />
           <div className="px-3 py-2 text-center">
             <p className="text-xs text-muted-foreground">
-              Use &uarr;&darr; to navigate, Enter to start, Esc to clear
+              &uarr;&darr; navigate, Enter to start, Shift+click for quick start
             </p>
           </div>
         </Card>
       )}
+
+      <Separator />
+
+      {/* Manual Timer Button */}
+      <Button
+        variant="outline"
+        className="w-full"
+        onClick={handleStartManualTimer}
+        disabled={isProcessing}
+      >
+        Start Manual Timer
+      </Button>
     </div>
   );
 }

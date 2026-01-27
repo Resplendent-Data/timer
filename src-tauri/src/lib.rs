@@ -10,7 +10,7 @@ mod stats;
 
 use std::sync::Mutex;
 
-use clickup::{IdleCheckResult, RunningTimerInfo, TaskSearchResult};
+use clickup::{IdleCheckResult, RunningTimerInfo, TaskSearchResult, TimeEntryTag};
 use stats::ProductivityStats;
 use tauri::{
     include_image,
@@ -36,19 +36,58 @@ async fn search_tasks(
 }
 
 /// Tauri command to start a timer for a task.
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+/// * `task_id` - The task ID to start the timer for
+/// * `billable` - Whether the time entry is billable (defaults to false)
+/// * `tags` - Optional list of tag names to apply
 #[tauri::command]
 async fn start_timer(
     api_key: String,
     team_id: String,
     task_id: String,
+    billable: Option<bool>,
+    tags: Option<Vec<String>>,
 ) -> Result<(), String> {
-    clickup::start_timer(api_key, team_id, task_id).await
+    clickup::start_timer(api_key, team_id, task_id, billable.unwrap_or(false), tags).await
 }
 
 /// Tauri command to stop the current timer.
 #[tauri::command]
 async fn stop_timer(api_key: String, team_id: String) -> Result<(), String> {
     clickup::stop_timer(api_key, team_id).await
+}
+
+/// Tauri command to get all time entry tags for a workspace.
+#[tauri::command]
+async fn get_time_entry_tags(
+    api_key: String,
+    team_id: String,
+) -> Result<Vec<TimeEntryTag>, String> {
+    clickup::get_time_entry_tags(api_key, team_id).await
+}
+
+/// Tauri command to start a manual timer (without a linked task).
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+/// * `description` - Optional description for the time entry
+/// * `billable` - Whether the time entry is billable (defaults to false)
+/// * `tags` - Optional list of tag names to apply
+#[tauri::command]
+async fn start_manual_timer(
+    api_key: String,
+    team_id: String,
+    description: Option<String>,
+    billable: Option<bool>,
+    tags: Option<Vec<String>>,
+) -> Result<(), String> {
+    clickup::start_manual_timer(api_key, team_id, description, billable.unwrap_or(false), tags).await
 }
 
 /// Tauri command to check idle time and stop ClickUp timer if needed.
@@ -382,6 +421,8 @@ pub fn run() {
             search_tasks,
             start_timer,
             stop_timer,
+            get_time_entry_tags,
+            start_manual_timer,
             update_tray_timer_display,
             send_notification_linux,
             get_productivity_stats,
