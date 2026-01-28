@@ -16,6 +16,7 @@ src-tauri/              # Rust backend
     idle/               # Platform-specific idle detection (macos.rs, linux.rs, windows.rs)
     clickup.rs          # ClickUp API integration
     idle_monitor.rs     # Unified idle detection interface
+    stats.rs            # Productivity stats and SQLite database
     lib.rs              # Tauri commands and app setup
 ```
 
@@ -42,21 +43,11 @@ cargo fmt               # Format code
 ## Running Tests
 
 ```bash
-# All Rust tests
-cd src-tauri && cargo test
-
-# Single test by name
-cd src-tauri && cargo test test_idle_check_result_serialization
-
-# Tests in a specific module
-cd src-tauri && cargo test clickup::tests
-cd src-tauri && cargo test idle::macos::tests
-
-# With stdout output
-cd src-tauri && cargo test -- --nocapture
-
-# Run specific test with output
-cd src-tauri && cargo test test_name -- --nocapture
+cd src-tauri && cargo test                                  # All tests
+cd src-tauri && cargo test test_idle_check_result_serialization  # Single test
+cd src-tauri && cargo test clickup::tests                   # Module tests
+cd src-tauri && cargo test stats::tests                     # Stats module
+cd src-tauri && cargo test -- --nocapture                   # With stdout
 ```
 
 ## Code Style - TypeScript/React
@@ -110,7 +101,6 @@ use crate::idle_monitor;
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdleCheckResult {
-    /// Whether a timer was stopped
     pub stopped: bool,
     #[serde(default)]
     pub task_name: Option<String>,
@@ -134,7 +124,7 @@ async fn command_name(param: String) -> Result<ReturnType, String> {
 pub async fn platform_fn() -> Result<T, String> { ... }
 ```
 
-**Tests:**
+**Tests:** Use `#[cfg(test)]` modules with descriptive test names
 ```rust
 #[cfg(test)]
 mod tests {
@@ -157,17 +147,13 @@ mod tests {
 
 **Persistent Storage:** Use `lib/store.ts` with `tauri-plugin-store`
 
-**State Management:**
-- React hooks for component/local state
-- `tauri-plugin-store` for persistent settings
-
 ## Platform Notes
 
-- **macOS:** IOKit `HIDIdleTime`, overlay title bar, `.app`/`.dmg` bundles
+- **macOS:** IOKit `HIDIdleTime`, overlay title bar, `.app`/`.dmg` bundles, sleep detection via NSWorkspace
 - **Linux:** GNOME DBus -> KDE DBus -> X11 XScreenSaver fallback; `notify-send` for notifications
 - **Windows:** `GetLastInputInfo` for idle detection
 
 ## Dependencies
 
-**Rust:** tauri v2, reqwest, serde, tokio, tauri-plugin-notification, tauri-plugin-store
-**TypeScript:** React 19, @tauri-apps/api, @tauri-apps/plugin-*, Radix UI, Tailwind CSS
+**Rust:** tauri v2, reqwest, serde, tokio, chrono, rusqlite, tauri-plugin-notification/store/updater
+**TypeScript:** React 19, @tauri-apps/api, @tauri-apps/plugin-*, Radix UI, Tailwind CSS v4

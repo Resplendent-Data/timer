@@ -39,45 +39,49 @@ function formatDuration(secs: number): string {
 export function IdleHistory({ events }: IdleHistoryProps) {
   if (events.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        <p className="text-2xl mb-2">🎯</p>
-        <p className="text-sm">No idle events yet</p>
-        <p className="text-xs">Keep focused!</p>
+      <div className="text-center py-6 text-muted-foreground">
+        <p className="text-xs uppercase tracking-wider">No idle events yet</p>
+        <p className="text-[10px] mt-1">Keep focused</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-foreground">Recent Idle Events</p>
-      <div className="space-y-1 max-h-48 overflow-y-auto">
+      <p className="brutalist-label">Recent Idle Events</p>
+      <div className="space-y-1 max-h-40 overflow-y-auto">
         {events.map((event) => (
           <div
             key={event.id}
             className={cn(
-              "flex items-center justify-between py-2 px-3 rounded-lg text-sm",
+              "flex items-center justify-between py-2 px-3 text-sm",
               event.timer_stopped
-                ? "bg-amber-500/10 border border-amber-500/20"
-                : "bg-muted/50"
+                ? "bg-primary/10 border-l-2 border-l-primary"
+                : "bg-muted/30"
             )}
           >
             <div className="flex items-center gap-2">
-              <span>{event.timer_stopped ? "⏹️" : "💤"}</span>
+              <span
+                className={cn(
+                  "w-1.5 h-1.5",
+                  event.timer_stopped ? "bg-primary" : "bg-muted-foreground"
+                )}
+              />
               <div>
-                <p className="text-foreground">
+                <p className="text-foreground text-sm">
                   {event.task_name || (event.timer_stopped ? "Timer stopped" : "Went idle")}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {formatRelativeTime(event.started_at)}
                   {event.timer_stopped && event.session_duration_secs > 0 && (
-                    <span className="ml-2 text-amber-600 dark:text-amber-400">
-                      · Timer ran {formatDuration(event.session_duration_secs)}
+                    <span className="ml-2 text-primary">
+                      ran {formatDuration(event.session_duration_secs)}
                     </span>
                   )}
                 </p>
               </div>
             </div>
-            <span className="text-muted-foreground text-xs">
+            <span className="text-muted-foreground text-xs font-mono-display">
               {formatDuration(event.duration_secs)} idle
             </span>
           </div>

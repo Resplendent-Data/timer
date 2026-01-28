@@ -1,6 +1,3 @@
-import { cn } from "@/lib/utils";
-import { Progress } from "@/components/ui/progress";
-
 interface TodayActivityProps {
   activeSeconds: number;
   idleSeconds: number;
@@ -20,56 +17,31 @@ export function TodayActivity({ activeSeconds, idleSeconds }: TodayActivityProps
   const totalSeconds = activeSeconds + idleSeconds;
   const activePercent = totalSeconds > 0 ? Math.round((activeSeconds / totalSeconds) * 100) : 0;
 
-  // Determine status message based on activity
-  const getStatusMessage = () => {
-    if (totalSeconds < 60) {
-      return "Just getting started...";
-    }
-    if (activePercent >= 90) {
-      return "Excellent focus today!";
-    }
-    if (activePercent >= 75) {
-      return "Great productivity!";
-    }
-    if (activePercent >= 50) {
-      return "Decent balance of work and breaks";
-    }
-    return "Taking it easy today";
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-sm">
         <div className="flex items-center gap-2">
-          <span className="text-green-500 font-medium">Active</span>
-          <span className="text-foreground font-semibold">{formatDuration(activeSeconds)}</span>
+          <span className="text-emerald-500 font-medium uppercase text-xs tracking-wider">Active</span>
+          <span className="font-mono-display font-semibold">{formatDuration(activeSeconds)}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground font-semibold">{formatDuration(idleSeconds)}</span>
-          <span className="text-muted-foreground">Idle</span>
+          <span className="font-mono-display font-semibold text-muted-foreground">{formatDuration(idleSeconds)}</span>
+          <span className="text-muted-foreground uppercase text-xs tracking-wider">Idle</span>
         </div>
       </div>
 
-      <div className="relative">
-        <Progress 
-          value={activePercent} 
-          className={cn(
-            "h-3",
-            activePercent >= 75 && "bg-green-100 dark:bg-green-950",
-            activePercent >= 50 && activePercent < 75 && "bg-yellow-100 dark:bg-yellow-950",
-            activePercent < 50 && "bg-muted"
-          )}
+      {/* Brutalist progress bar */}
+      <div className="relative h-4 bg-muted brutalist-border">
+        <div
+          className="absolute inset-y-0 left-0 bg-primary transition-all duration-300"
+          style={{ width: `${activePercent}%` }}
         />
         <div className="absolute inset-y-0 right-2 flex items-center">
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="text-[10px] font-mono-display font-bold text-foreground mix-blend-difference">
             {activePercent}%
           </span>
         </div>
       </div>
-
-      <p className="text-xs text-muted-foreground text-center">
-        {getStatusMessage()}
-      </p>
     </div>
   );
 }

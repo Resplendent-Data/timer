@@ -39,45 +39,45 @@ export function WeeklyProgress({
   // Determine insight message
   const getInsight = () => {
     if (activeSecondsLastWeek === 0) {
-      return "First week of tracking!";
+      return "First week tracking";
     }
     const percentChange = Math.round((weekDeltaSeconds / activeSecondsLastWeek) * 100);
     if (percentChange >= 50) {
-      return "Major productivity boost!";
+      return "Major boost";
     }
     if (percentChange >= 20) {
-      return "Nice improvement from last week";
+      return "Improvement";
     }
     if (percentChange >= 0) {
-      return "Consistent with last week";
+      return "Consistent";
     }
     if (percentChange >= -20) {
-      return "Slightly less than last week";
+      return "Slightly down";
     }
-    return "Taking it easier this week";
+    return "Taking it easy";
   };
 
   return (
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-lg font-semibold text-foreground">
+        <p className="text-lg font-mono-display font-semibold">
           {formatDuration(activeSecondsWeek)}
-          <span className="text-sm font-normal text-muted-foreground ml-2">active</span>
+          <span className="text-xs font-normal text-muted-foreground ml-2 uppercase tracking-wider">active</span>
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
           {getInsight()}
         </p>
       </div>
       <div className={cn(
-        "flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium",
-        isUp && "bg-green-500/10 text-green-600 dark:text-green-400",
-        isDown && "bg-red-500/10 text-red-600 dark:text-red-400",
+        "flex items-center gap-1 px-2 py-1 text-xs font-mono-display font-medium",
+        isUp && "bg-emerald-500/20 text-emerald-500",
+        isDown && "bg-destructive/20 text-destructive",
         isSteady && "bg-muted text-muted-foreground"
       )}>
         {isUp && <span>+{formatDelta(weekDeltaSeconds)}</span>}
         {isDown && <span>-{formatDelta(weekDeltaSeconds)}</span>}
-        {isSteady && <span>same</span>}
-        <span className="text-xs opacity-75">vs last wk</span>
+        {isSteady && <span>=</span>}
+        <span className="text-[10px] opacity-75 uppercase">vs last</span>
       </div>
     </div>
   );

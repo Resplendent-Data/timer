@@ -1,15 +1,13 @@
 /**
  * Timer controls component for starting and stopping ClickUp timers.
  *
+ * Brutalist design with compact, functional controls.
  * Features:
  * - Search for tasks with auto-complete (debounced)
  * - Recent tasks list for quick access
  * - Resume last stopped timer
  * - Start manual timer (without a task)
  * - Keyboard navigation
- * - Task details (project path, status, tags)
- * - Optional tag and billable settings via modal
- * - Shift+click for quick start (skips modal)
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -24,9 +22,7 @@ import { IdleStatus } from "../hooks/useIdleChecker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { StartTimerModal, TimeEntryTag, TaskInfo } from "./StartTimerModal";
 
 /** Tag on a task */
@@ -338,20 +334,18 @@ export function TimerControls({ status }: TimerControlsProps) {
     searchInputRef.current?.focus();
   }, []);
 
-  // If timer is running, show stop button
+  // If timer is running, show stop button only
   if (status.runningTaskName) {
     return (
       <div className="space-y-3">
         {error && (
-          <Card className="bg-destructive/10 border-destructive">
-            <CardContent className="py-3">
-              <p className="text-sm text-destructive">{error}</p>
-            </CardContent>
-          </Card>
+          <div className="brutalist-border border-destructive bg-destructive/10 p-3">
+            <p className="text-sm text-destructive font-mono-display">{error}</p>
+          </div>
         )}
         <Button
           variant="destructive"
-          className="w-full"
+          className="w-full h-12 text-sm font-semibold uppercase tracking-wider"
           onClick={handleStopTimer}
           disabled={isProcessing}
         >
@@ -362,7 +356,7 @@ export function TimerControls({ status }: TimerControlsProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Start Timer Modal */}
       <StartTimerModal
         open={modalOpen}
@@ -377,13 +371,15 @@ export function TimerControls({ status }: TimerControlsProps) {
       {status.lastStoppedTaskId && status.lastStoppedTaskName && (
         <Button
           variant="secondary"
-          className="w-full justify-start text-left h-auto py-3"
+          className="w-full justify-start text-left h-auto py-3 brutalist-border"
           onClick={handleResumeTimer}
           disabled={isProcessing}
         >
-          <div className="flex flex-col items-start">
-            <span className="text-xs text-muted-foreground">Resume</span>
-            <span className="font-medium truncate max-w-full">
+          <div className="flex items-center gap-2 w-full">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0">
+              Resume
+            </span>
+            <span className="font-medium text-sm truncate">
               {status.lastStoppedTaskName}
             </span>
           </div>
@@ -392,91 +388,82 @@ export function TimerControls({ status }: TimerControlsProps) {
 
       {/* Recent tasks */}
       {recentTasks.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium text-muted-foreground">
-            Recent Tasks
-          </h4>
-          <div className="space-y-1">
+        <div className="brutalist-border">
+          <div className="px-3 py-2 brutalist-divider border-t-0">
+            <span className="brutalist-label">Recent</span>
+          </div>
+          <div className="divide-y divide-border">
             {recentTasks.map((task) => (
-              <Button
+              <button
                 key={task.id}
-                variant="ghost"
-                className="w-full justify-start text-left h-auto py-2 px-3"
+                className="w-full text-left px-3 py-2.5 hover:bg-secondary/50 transition-colors disabled:opacity-50"
                 onClick={(e) => handleRecentTaskClick(task, e)}
                 disabled={isProcessing}
               >
-                <div className="flex flex-col items-start overflow-hidden">
-                  <span className="font-medium text-sm truncate max-w-full">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium text-sm truncate">
                     {task.name}
                   </span>
                   {task.projectPath && (
-                    <span className="text-xs text-muted-foreground truncate max-w-full">
+                    <span className="text-xs text-muted-foreground truncate">
                       {task.projectPath}
                     </span>
                   )}
                 </div>
-              </Button>
+              </button>
             ))}
           </div>
         </div>
       )}
 
-      <Separator />
-
       {/* Search */}
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium text-muted-foreground">
-          Search Tasks
-        </h4>
-        <div className="relative">
-          <Input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Search task name or ID..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isProcessing}
-            className="pr-8"
-          />
-          {isSearching && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            </div>
-          )}
-          {searchQuery && !isSearching && (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-muted hover:bg-muted-foreground/20 flex items-center justify-center text-muted-foreground text-xs"
-              aria-label="Clear search"
-            >
-              &times;
-            </button>
-          )}
-        </div>
+      <div className="relative">
+        <Input
+          ref={searchInputRef}
+          type="text"
+          placeholder="Search tasks..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={isProcessing}
+          className="pr-8 h-10 font-mono-display text-sm"
+        />
+        {isSearching && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <div className="h-4 w-4 animate-spin border-2 border-muted-foreground border-t-transparent" />
+          </div>
+        )}
+        {searchQuery && !isSearching && (
+          <button
+            type="button"
+            onClick={handleClearSearch}
+            className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 bg-muted hover:bg-muted-foreground/20 flex items-center justify-center text-muted-foreground text-xs font-bold"
+            aria-label="Clear search"
+          >
+            &times;
+          </button>
+        )}
       </div>
 
+      {/* Error display */}
       {error && (
-        <Card className="bg-destructive/10 border-destructive">
-          <CardContent className="py-3">
-            <p className="text-sm text-destructive">{error}</p>
-          </CardContent>
-        </Card>
+        <div className="brutalist-border border-destructive bg-destructive/10 p-3">
+          <p className="text-sm text-destructive font-mono-display">{error}</p>
+        </div>
       )}
 
       {/* Search results */}
       {searchResults.length > 0 && (
-        <Card>
-          <ScrollArea className="max-h-64">
+        <div className="brutalist-border">
+          <ScrollArea className="max-h-56">
             <div ref={resultsRef} className="divide-y divide-border">
               {searchResults.map((task, index) => (
                 <div
                   key={task.id}
                   className={`p-3 cursor-pointer transition-colors ${
                     index === selectedIndex
-                      ? "bg-accent border-l-2 border-l-primary"
-                      : "hover:bg-muted/50"
+                      ? "bg-secondary border-l-2 border-l-primary"
+                      : "hover:bg-secondary/50"
                   }`}
                   onClick={(e) => handleTaskClick(task, e)}
                   onMouseEnter={() => setSelectedIndex(index)}
@@ -486,17 +473,17 @@ export function TimerControls({ status }: TimerControlsProps) {
                     {task.status_name && (
                       <Badge
                         variant="secondary"
-                        className="text-[10px] px-1.5 py-0"
+                        className="text-[9px] px-1.5 py-0"
                         style={{
                           backgroundColor: task.status_color || undefined,
                           color: task.status_color ? "#fff" : undefined,
                         }}
                       >
-                        {task.status_name}
+                        {task.status_name.toUpperCase()}
                       </Badge>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
                     {buildProjectPath(task) || task.custom_id || task.id}
                   </p>
                   {task.tags.length > 0 && (
@@ -504,11 +491,10 @@ export function TimerControls({ status }: TimerControlsProps) {
                       {task.tags.map((tag) => (
                         <span
                           key={tag.name}
-                          className="inline-flex items-center rounded-md px-1.5 py-0 text-[10px] font-medium"
+                          className="inline-flex items-center px-1.5 py-0 text-[9px] font-medium uppercase tracking-wide"
                           style={{
-                            backgroundColor: tag.tag_bg || "#888888",
-                            color: "#ffffff",
-                            border: `1px solid ${tag.tag_bg || "#888888"}`,
+                            backgroundColor: tag.tag_bg || "#555",
+                            color: "#fff",
                           }}
                         >
                           {tag.name}
@@ -520,25 +506,22 @@ export function TimerControls({ status }: TimerControlsProps) {
               ))}
             </div>
           </ScrollArea>
-          <Separator />
-          <div className="px-3 py-2 text-center">
-            <p className="text-xs text-muted-foreground">
-              &uarr;&darr; navigate, Enter to start, Shift+click for quick start
+          <div className="px-3 py-1.5 brutalist-divider text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+              Enter to start &middot; Shift+click quick start
             </p>
           </div>
-        </Card>
+        </div>
       )}
-
-      <Separator />
 
       {/* Manual Timer Button */}
       <Button
         variant="outline"
-        className="w-full"
+        className="w-full h-10 text-sm font-medium uppercase tracking-wider"
         onClick={handleStartManualTimer}
         disabled={isProcessing}
       >
-        Start Manual Timer
+        Manual Timer
       </Button>
     </div>
   );

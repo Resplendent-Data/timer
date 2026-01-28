@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TodayActivity } from "./stats/TodayActivity";
 import { XPProgressBar } from "./stats/XPProgressBar";
@@ -94,8 +93,10 @@ export function Stats() {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
-          <p className="text-2xl animate-pulse">📊</p>
-          <p className="text-sm text-muted-foreground mt-2">Loading stats...</p>
+          <div className="h-6 w-6 border-2 border-primary border-t-transparent animate-spin mx-auto" />
+          <p className="text-xs text-muted-foreground mt-3 uppercase tracking-wider">
+            Loading stats...
+          </p>
         </div>
       </div>
     );
@@ -103,127 +104,92 @@ export function Stats() {
 
   if (error) {
     return (
-      <Card>
-        <CardContent className="py-8">
-          <div className="text-center">
-            <p className="text-2xl mb-2">😵</p>
-            <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={loadStats}>
-              Retry
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="brutalist-border p-6">
+        <div className="text-center">
+          <p className="text-sm text-destructive font-mono-display mb-4">{error}</p>
+          <Button variant="outline" size="sm" onClick={loadStats}>
+            Retry
+          </Button>
+        </div>
+      </div>
     );
   }
 
   if (!stats) return null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Today's Activity */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <span>📊</span> Today
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <TodayActivity
-            activeSeconds={stats.active_seconds_today}
-            idleSeconds={stats.idle_seconds_today}
-          />
-        </CardContent>
-      </Card>
+      <div className="brutalist-border p-4">
+        <div className="brutalist-label mb-3">Today</div>
+        <TodayActivity
+          activeSeconds={stats.active_seconds_today}
+          idleSeconds={stats.idle_seconds_today}
+        />
+      </div>
 
       {/* Streak */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <span>🔥</span> Streak
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <StreakDisplay
-            currentStreak={stats.current_streak}
-            bestStreak={stats.best_streak}
-          />
-        </CardContent>
-      </Card>
+      <div className="brutalist-border p-4">
+        <div className="brutalist-label mb-3">Streak</div>
+        <StreakDisplay
+          currentStreak={stats.current_streak}
+          bestStreak={stats.best_streak}
+        />
+      </div>
 
       {/* Weekly Chart */}
-      <Card>
-        <CardContent className="pt-4">
-          <FocusChart data={stats.last_7_days} />
-        </CardContent>
-      </Card>
+      <div className="brutalist-border p-4">
+        <FocusChart data={stats.last_7_days} />
+      </div>
 
       {/* XP/Level and Sessions Grid */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3">
         {/* Level & XP */}
-        <Card className="col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <span>⚡</span> Level
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <XPProgressBar
-              currentXp={stats.current_xp}
-              level={stats.current_level}
-              xpForNextLevel={stats.xp_for_next_level}
-              progressPercent={stats.xp_progress_percent}
-            />
-          </CardContent>
-        </Card>
+        <div className="brutalist-border p-4">
+          <div className="brutalist-label mb-3">Level</div>
+          <XPProgressBar
+            currentXp={stats.current_xp}
+            level={stats.current_level}
+            xpForNextLevel={stats.xp_for_next_level}
+            progressPercent={stats.xp_progress_percent}
+          />
+        </div>
 
         {/* Sessions */}
-        <Card className="col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <span>🎯</span> Sessions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 space-y-2">
+        <div className="brutalist-border p-4">
+          <div className="brutalist-label mb-3">Sessions</div>
+          <div className="space-y-2">
             <div className="flex justify-between items-baseline">
-              <span className="text-2xl font-bold">{stats.sessions_today}</span>
-              <span className="text-xs text-muted-foreground">today</span>
+              <span className="text-2xl font-mono-display font-bold">{stats.sessions_today}</span>
+              <span className="text-xs text-muted-foreground uppercase">today</span>
             </div>
             <div className="flex justify-between items-baseline text-sm">
-              <span className="font-medium">{stats.sessions_week}</span>
-              <span className="text-xs text-muted-foreground">this week</span>
+              <span className="font-mono-display font-medium">{stats.sessions_week}</span>
+              <span className="text-xs text-muted-foreground uppercase">this week</span>
             </div>
             {stats.avg_session_minutes > 0 && (
               <p className="text-xs text-muted-foreground">
-                Avg: {formatMinutes(stats.avg_session_minutes)} per session
+                Avg: {formatMinutes(stats.avg_session_minutes)}/session
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
       {/* Weekly Progress */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <span>🏆</span> This Week
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <WeeklyProgress
-            activeSecondsWeek={stats.active_seconds_week}
-            activeSecondsLastWeek={stats.active_seconds_last_week}
-            weekDeltaSeconds={stats.week_delta_seconds}
-          />
-        </CardContent>
-      </Card>
+      <div className="brutalist-border p-4">
+        <div className="brutalist-label mb-3">This Week</div>
+        <WeeklyProgress
+          activeSecondsWeek={stats.active_seconds_week}
+          activeSecondsLastWeek={stats.active_seconds_last_week}
+          weekDeltaSeconds={stats.week_delta_seconds}
+        />
+      </div>
 
       {/* Idle History */}
-      <Card>
-        <CardContent className="pt-4">
-          <IdleHistory events={stats.recent_events} />
-        </CardContent>
-      </Card>
+      <div className="brutalist-border p-4">
+        <IdleHistory events={stats.recent_events} />
+      </div>
     </div>
   );
 }

@@ -1,10 +1,7 @@
 /**
  * Widget component for the always-on-top timer display.
  *
- * A minimal pill-shaped widget that shows:
- * - Elapsed time when a timer is running (e.g., "1:23:45")
- * - "No timer" when no timer is active
- *
+ * Brutalist minimal widget showing elapsed time.
  * Features:
  * - Draggable by clicking anywhere
  * - Click opens the main window (only if not dragging)
@@ -180,10 +177,15 @@ export function Widget() {
     <div
       className={`
         h-screen w-screen flex items-center justify-center 
-        select-none cursor-pointer rounded-md
-        font-mono text-xs font-semibold tabular-nums
-        ${isTimerRunning ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-500"}
+        select-none cursor-pointer
+        font-mono text-xs font-bold tabular-nums tracking-tight
+        border-2
+        ${isTimerRunning 
+          ? "bg-primary text-primary-foreground border-primary" 
+          : "bg-card text-muted-foreground border-border"
+        }
       `}
+      style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
     >

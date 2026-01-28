@@ -16,7 +16,6 @@ import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
 import { Stats } from "./components/Stats";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
 import { getSettings, getWidgetPosition, saveWidgetPosition, clearWidgetPosition } from "./lib/store";
 
 function App() {
@@ -155,30 +154,30 @@ function App() {
 
   return (
     <main className="h-screen w-full flex flex-col bg-background text-foreground">
-      {/* Sticky Header with Traffic Light Space - Draggable */}
+      {/* Brutalist Header - Draggable */}
       <header
-        className="sticky top-0 z-10 bg-background pt-8 text-center px-6 pb-4 border-b border-border shrink-0 select-none"
+        className="sticky top-0 z-10 bg-background pt-7 px-5 pb-4 border-b-2 border-border shrink-0 select-none"
         data-tauri-drag-region
       >
-        <h1 className="text-xl font-semibold tracking-tight pointer-events-none">
-          Resplendent Timer
+        <h1 className="font-mono-display text-sm font-semibold tracking-widest uppercase pointer-events-none">
+          Resplendent
         </h1>
-        <p className="text-sm text-muted-foreground mt-1 pointer-events-none">
-          Automatically stops ClickUp timers when you're idle
+        <p className="text-xs text-muted-foreground mt-0.5 pointer-events-none tracking-wide">
+          Auto-stop idle ClickUp timers
         </p>
       </header>
 
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6 flex flex-col min-h-full">
+        <div className="p-4 flex flex-col min-h-full">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-            <TabsList className="grid w-full grid-cols-3 mb-6 shrink-0">
-              <TabsTrigger value="status">Status</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3 mb-4 shrink-0">
+              <TabsTrigger value="status">Timer</TabsTrigger>
               <TabsTrigger value="stats">Stats</TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
+              <TabsTrigger value="settings">Config</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="status" className="space-y-6 mt-0 flex-1">
+            <TabsContent value="status" className="space-y-4 mt-0 flex-1">
               <StatusIndicator status={idleStatus} />
               <TimerControls status={idleStatus} />
             </TabsContent>
@@ -191,16 +190,6 @@ function App() {
               <Settings onSave={() => setActiveTab("status")} />
             </TabsContent>
           </Tabs>
-
-          {/* Footer */}
-          <div className="mt-auto pt-8">
-            <Separator className="mb-4" />
-            <footer className="text-center">
-              <p className="text-xs text-muted-foreground">
-                Minimize to system tray to keep monitoring in the background
-              </p>
-            </footer>
-          </div>
         </div>
       </div>
     </main>

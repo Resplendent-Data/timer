@@ -14,7 +14,7 @@ interface FocusChartProps {
 
 function formatDay(dateStr: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", { weekday: "short" });
+  return date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
 }
 
 function formatDuration(seconds: number): string {
@@ -37,8 +37,8 @@ export function FocusChart({ data }: FocusChartProps) {
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-foreground">Last 7 Days</p>
-      <div className="flex items-end justify-between gap-1 h-24">
+      <p className="brutalist-label">Last 7 Days</p>
+      <div className="flex items-end justify-between gap-1 h-20">
         {sortedData.map((day) => {
           const heightPercent = (day.active_seconds / maxSeconds) * 100;
           const isToday =
@@ -49,26 +49,24 @@ export function FocusChart({ data }: FocusChartProps) {
               key={day.date}
               className="flex-1 flex flex-col items-center gap-1"
             >
-              <div className="w-full h-20 flex items-end justify-center">
+              <div className="w-full h-16 flex items-end justify-center">
                 <div
                   className={cn(
-                    "w-full max-w-8 rounded-t-sm transition-all duration-300",
-                    isToday
-                      ? "bg-gradient-to-t from-purple-500 to-indigo-500"
-                      : "bg-primary/60",
-                    day.active_seconds === 0 && "bg-muted h-1"
+                    "w-full max-w-6 transition-all duration-300",
+                    isToday ? "bg-primary" : "bg-primary/50",
+                    day.active_seconds === 0 && "bg-muted h-0.5"
                   )}
                   style={{
-                    height: day.active_seconds > 0 ? `${Math.max(heightPercent, 5)}%` : "4px",
+                    height: day.active_seconds > 0 ? `${Math.max(heightPercent, 8)}%` : "2px",
                   }}
                   title={`${formatDuration(day.active_seconds)} active`}
                 />
               </div>
               <span
                 className={cn(
-                  "text-xs",
+                  "text-[10px] font-mono-display tracking-wider",
                   isToday
-                    ? "font-semibold text-foreground"
+                    ? "font-semibold text-primary"
                     : "text-muted-foreground"
                 )}
               >
@@ -78,7 +76,9 @@ export function FocusChart({ data }: FocusChartProps) {
           );
         })}
       </div>
-      <p className="text-xs text-center text-muted-foreground">Active time per day</p>
+      <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider">
+        Active time per day
+      </p>
     </div>
   );
 }

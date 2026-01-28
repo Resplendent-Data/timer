@@ -1,8 +1,7 @@
 /**
  * Settings component for configuring ClickUp integration.
  *
- * Allows users to enter their ClickUp API key, team ID, and
- * configure the idle timeout threshold.
+ * Brutalist design with clear sections and visible structure.
  */
 
 import { useState, useEffect, FormEvent } from "react";
@@ -12,8 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 
 interface SettingsProps {
   onSave?: () => void;
@@ -90,276 +87,273 @@ export function Settings({ onSave }: SettingsProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <p className="text-muted-foreground">Loading settings...</p>
+        <div className="h-5 w-5 border-2 border-primary border-t-transparent animate-spin" />
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">ClickUp Settings</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="p-3 rounded-md bg-destructive/10 border border-destructive text-destructive text-sm">
-              {error}
-            </div>
-          )}
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {/* ClickUp Settings */}
+      <div className="brutalist-border p-4 space-y-4">
+        <div className="brutalist-label">ClickUp</div>
 
-          {/* API Key */}
-          <div className="space-y-2">
-            <Label htmlFor="apiKey">API Key</Label>
-            <div className="flex gap-2">
-              <Input
-                id="apiKey"
-                type={showApiKey ? "text" : "password"}
-                value={settings.clickupApiKey}
-                onChange={(e) =>
-                  setSettings({ ...settings, clickupApiKey: e.target.value })
-                }
-                placeholder="pk_..."
-                autoComplete="off"
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowApiKey(!showApiKey)}
-              >
-                {showApiKey ? "Hide" : "Show"}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Get your API key from{" "}
-              <a
-                href="https://app.clickup.com/settings/apps"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                ClickUp Settings &rarr; Apps
-              </a>
-            </p>
+        {error && (
+          <div className="p-3 bg-destructive/10 border-2 border-destructive text-destructive text-sm font-mono-display">
+            {error}
           </div>
+        )}
 
-          {/* Team ID */}
-          <div className="space-y-2">
-            <Label htmlFor="teamId">Team ID</Label>
+        {/* API Key */}
+        <div className="space-y-2">
+          <Label htmlFor="apiKey" className="text-xs uppercase tracking-wider">
+            API Key
+          </Label>
+          <div className="flex gap-2">
             <Input
-              id="teamId"
-              type="text"
-              value={settings.clickupTeamId}
+              id="apiKey"
+              type={showApiKey ? "text" : "password"}
+              value={settings.clickupApiKey}
               onChange={(e) =>
-                setSettings({ ...settings, clickupTeamId: e.target.value })
+                setSettings({ ...settings, clickupApiKey: e.target.value })
               }
-              placeholder="123456789"
+              placeholder="pk_..."
+              autoComplete="off"
+              className="flex-1 font-mono-display text-sm"
             />
-            <p className="text-xs text-muted-foreground">
-              Find your Team ID in the ClickUp URL: app.clickup.com/
-              <strong>[team_id]</strong>/...
-            </p>
-          </div>
-
-          {/* Idle Threshold */}
-          <div className="space-y-2">
-            <Label htmlFor="threshold">Idle Threshold (minutes)</Label>
-            <Input
-              id="threshold"
-              type="number"
-              value={settings.idleThresholdMinutes}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  idleThresholdMinutes: parseInt(e.target.value) || 10,
-                })
-              }
-              min={1}
-              max={120}
-              className="w-24"
-            />
-            <p className="text-xs text-muted-foreground">
-              Timer will be stopped after this many minutes of inactivity
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* No Timer Warning Section */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">No Timer Warning</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Enable Warning */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="noTimerWarningEnabled">
-                Warn me if no timer is running
-              </Label>
-            </div>
-            <Switch
-              id="noTimerWarningEnabled"
-              checked={settings.noTimerWarningEnabled}
-              onCheckedChange={(checked) =>
-                setSettings({
-                  ...settings,
-                  noTimerWarningEnabled: checked,
-                })
-              }
-            />
-          </div>
-
-          {settings.noTimerWarningEnabled && (
-            <>
-              <Separator />
-
-              {/* Warning Threshold */}
-              <div className="space-y-2">
-                <Label htmlFor="noTimerWarningMinutes">
-                  Warn after (minutes)
-                </Label>
-                <Input
-                  id="noTimerWarningMinutes"
-                  type="number"
-                  value={settings.noTimerWarningMinutes}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      noTimerWarningMinutes: parseInt(e.target.value) || 10,
-                    })
-                  }
-                  min={1}
-                  max={120}
-                  className="w-24"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Time of activity without a timer before warning
-                </p>
-              </div>
-
-              {/* Repeat Warning */}
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="noTimerWarningRepeat">
-                    Repeat warning at intervals
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    If disabled, warns once until you start a timer
-                  </p>
-                </div>
-                <Switch
-                  id="noTimerWarningRepeat"
-                  checked={settings.noTimerWarningRepeat}
-                  onCheckedChange={(checked) =>
-                    setSettings({
-                      ...settings,
-                      noTimerWarningRepeat: checked,
-                    })
-                  }
-                />
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Display Section */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Display</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Floating Widget */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="widgetEnabled">
-                Floating timer widget
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Show a small always-on-top window with elapsed time
-              </p>
-            </div>
-            <Switch
-              id="widgetEnabled"
-              checked={settings.widgetEnabled}
-              onCheckedChange={(checked) =>
-                setSettings({
-                  ...settings,
-                  widgetEnabled: checked,
-                })
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Updates Section */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Updates</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>App Version</Label>
-              <p className="text-sm text-muted-foreground">
-                v{updater.currentVersion}
-              </p>
-            </div>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="min-w-[140px]"
-              onClick={() => updater.checkForUpdates()}
-              disabled={updater.isChecking || updater.isUpdating}
+              onClick={() => setShowApiKey(!showApiKey)}
+              className="text-xs uppercase tracking-wider"
             >
-              {updater.isChecking
-                ? "Checking..."
-                : updater.isUpdating
-                ? "Updating..."
-                : "Check for Updates"}
+              {showApiKey ? "Hide" : "Show"}
             </Button>
           </div>
+          <p className="text-[10px] text-muted-foreground">
+            Get from{" "}
+            <a
+              href="https://app.clickup.com/settings/apps"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              ClickUp Settings &rarr; Apps
+            </a>
+          </p>
+        </div>
 
-          <Separator />
+        {/* Team ID */}
+        <div className="space-y-2">
+          <Label htmlFor="teamId" className="text-xs uppercase tracking-wider">
+            Team ID
+          </Label>
+          <Input
+            id="teamId"
+            type="text"
+            value={settings.clickupTeamId}
+            onChange={(e) =>
+              setSettings({ ...settings, clickupTeamId: e.target.value })
+            }
+            placeholder="123456789"
+            className="font-mono-display text-sm"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            From URL: app.clickup.com/<strong>[team_id]</strong>/...
+          </p>
+        </div>
 
-          <div className="space-y-1">
-            <Label>Status</Label>
-            <p className="text-sm text-muted-foreground">
-              {updater.statusMessage}
-            </p>
-            {updater.progress && updater.progress.total && (
-              <div className="mt-2">
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all"
-                    style={{
-                      width: `${Math.round(
-                        (updater.progress.downloaded / updater.progress.total) *
-                          100
-                      )}%`,
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {Math.round(updater.progress.downloaded / 1024)} KB /{" "}
-                  {Math.round(updater.progress.total / 1024)} KB
+        {/* Idle Threshold */}
+        <div className="space-y-2">
+          <Label htmlFor="threshold" className="text-xs uppercase tracking-wider">
+            Idle Threshold (minutes)
+          </Label>
+          <Input
+            id="threshold"
+            type="number"
+            value={settings.idleThresholdMinutes}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                idleThresholdMinutes: parseInt(e.target.value) || 10,
+              })
+            }
+            min={1}
+            max={120}
+            className="w-24 font-mono-display text-sm"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Stop timer after this many idle minutes
+          </p>
+        </div>
+      </div>
+
+      {/* No Timer Warning Section */}
+      <div className="brutalist-border p-4 space-y-4">
+        <div className="brutalist-label">No Timer Warning</div>
+
+        {/* Enable Warning */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="noTimerWarningEnabled" className="text-sm">
+              Warn if no timer running
+            </Label>
+          </div>
+          <Switch
+            id="noTimerWarningEnabled"
+            checked={settings.noTimerWarningEnabled}
+            onCheckedChange={(checked) =>
+              setSettings({
+                ...settings,
+                noTimerWarningEnabled: checked,
+              })
+            }
+          />
+        </div>
+
+        {settings.noTimerWarningEnabled && (
+          <>
+            <div className="brutalist-divider" />
+
+            {/* Warning Threshold */}
+            <div className="space-y-2">
+              <Label htmlFor="noTimerWarningMinutes" className="text-xs uppercase tracking-wider">
+                Warn after (minutes)
+              </Label>
+              <Input
+                id="noTimerWarningMinutes"
+                type="number"
+                value={settings.noTimerWarningMinutes}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    noTimerWarningMinutes: parseInt(e.target.value) || 10,
+                  })
+                }
+                min={1}
+                max={120}
+                className="w-24 font-mono-display text-sm"
+              />
+            </div>
+
+            {/* Repeat Warning */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="noTimerWarningRepeat" className="text-sm">
+                  Repeat at intervals
+                </Label>
+                <p className="text-[10px] text-muted-foreground">
+                  If off, warns once until timer starts
                 </p>
               </div>
-            )}
-            {updater.error && (
-              <p className="text-sm text-destructive">{updater.error}</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              <Switch
+                id="noTimerWarningRepeat"
+                checked={settings.noTimerWarningRepeat}
+                onCheckedChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    noTimerWarningRepeat: checked,
+                  })
+                }
+              />
+            </div>
+          </>
+        )}
+      </div>
 
-      <Button type="submit" className="w-full" disabled={saving}>
-        {saving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
+      {/* Display Section */}
+      <div className="brutalist-border p-4 space-y-4">
+        <div className="brutalist-label">Display</div>
+
+        {/* Floating Widget */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="widgetEnabled" className="text-sm">
+              Floating widget
+            </Label>
+            <p className="text-[10px] text-muted-foreground">
+              Always-on-top timer display
+            </p>
+          </div>
+          <Switch
+            id="widgetEnabled"
+            checked={settings.widgetEnabled}
+            onCheckedChange={(checked) =>
+              setSettings({
+                ...settings,
+                widgetEnabled: checked,
+              })
+            }
+          />
+        </div>
+      </div>
+
+      {/* Updates Section */}
+      <div className="brutalist-border p-4 space-y-4">
+        <div className="brutalist-label">Updates</div>
+
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label className="text-sm">Version</Label>
+            <p className="text-xs text-muted-foreground font-mono-display">
+              v{updater.currentVersion}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-w-[120px] text-xs uppercase tracking-wider"
+            onClick={() => updater.checkForUpdates()}
+            disabled={updater.isChecking || updater.isUpdating}
+          >
+            {updater.isChecking
+              ? "Checking..."
+              : updater.isUpdating
+              ? "Updating..."
+              : "Check Updates"}
+          </Button>
+        </div>
+
+        <div className="brutalist-divider" />
+
+        <div className="space-y-1">
+          <Label className="text-xs uppercase tracking-wider">Status</Label>
+          <p className="text-xs text-muted-foreground">
+            {updater.statusMessage}
+          </p>
+          {updater.progress && updater.progress.total && (
+            <div className="mt-2">
+              <div className="h-2 bg-muted brutalist-border overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.round(
+                      (updater.progress.downloaded / updater.progress.total) *
+                        100
+                    )}%`,
+                  }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1 font-mono-display">
+                {Math.round(updater.progress.downloaded / 1024)} KB /{" "}
+                {Math.round(updater.progress.total / 1024)} KB
+              </p>
+            </div>
+          )}
+          {updater.error && (
+            <p className="text-xs text-destructive font-mono-display">{updater.error}</p>
+          )}
+        </div>
+      </div>
+
+      <Button 
+        type="submit" 
+        className="w-full h-11 text-sm font-semibold uppercase tracking-wider" 
+        disabled={saving}
+      >
+        {saving ? "Saving..." : saved ? "Saved" : "Save Settings"}
       </Button>
     </form>
   );

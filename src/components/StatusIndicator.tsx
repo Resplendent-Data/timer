@@ -1,17 +1,12 @@
 /**
- * Status indicator component showing current idle time and timer status.
+ * Timer hero display component.
  *
- * Displays:
- * - Current idle time (real-time)
- * - Currently running ClickUp timer (if any)
- * - Elapsed time on the running timer
- * - Last stopped timer information
- * - Any errors
+ * Brutalist design with large timer display as the hero element.
+ * Shows elapsed time prominently when running, with compact status indicators.
  */
 
 import { useEffect, useState } from "react";
 import { IdleStatus, useIdleTime } from "../hooks/useIdleChecker";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 interface StatusIndicatorProps {
@@ -36,13 +31,20 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * Format milliseconds into a human-readable elapsed time string.
+ * Format milliseconds into a timer display string (HH:MM:SS or MM:SS).
  */
-function formatElapsedTime(startTimeMs: number): string {
+function formatTimerDisplay(startTimeMs: number): string {
   const now = Date.now();
   const elapsedMs = now - startTimeMs;
-  const elapsedSecs = Math.floor(elapsedMs / 1000);
-  return formatDuration(elapsedSecs);
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  }
+  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -59,10 +61,10 @@ function formatRelativeTime(date: Date): string {
     return "just now";
   }
   if (diffMins < 60) {
-    return `${diffMins} minute${diffMins !== 1 ? "s" : ""} ago`;
+    return `${diffMins}m ago`;
   }
   if (diffHours < 24) {
-    return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
+    return `${diffHours}h ago`;
   }
   return date.toLocaleDateString();
 }
@@ -70,137 +72,144 @@ function formatRelativeTime(date: Date): string {
 /**
  * Hook to get live elapsed time from a start timestamp.
  */
-function useElapsedTime(startTimeMs: number | null): string | null {
-  const [elapsed, setElapsed] = useState<string | null>(null);
+function useTimerDisplay(startTimeMs: number | null): string {
+  const [display, setDisplay] = useState<string>("--:--");
 
   useEffect(() => {
     if (startTimeMs === null || startTimeMs === 0) {
-      setElapsed(null);
+      setDisplay("--:--");
       return;
     }
 
     // Update immediately
-    setElapsed(formatElapsedTime(startTimeMs));
+    setDisplay(formatTimerDisplay(startTimeMs));
 
     // Update every second
     const interval = setInterval(() => {
-      setElapsed(formatElapsedTime(startTimeMs));
+      setDisplay(formatTimerDisplay(startTimeMs));
     }, 1000);
 
     return () => clearInterval(interval);
   }, [startTimeMs]);
 
-  return elapsed;
+  return display;
 }
 
 export function StatusIndicator({ status }: StatusIndicatorProps) {
   // Get real-time idle updates
   const { idleSeconds } = useIdleTime();
   // Get live elapsed time for running timer
-  const elapsedTime = useElapsedTime(status.runningTaskStartMs);
+  const timerDisplay = useTimerDisplay(status.runningTaskStartMs);
+
+  const isRunning = !!status.runningTaskName;
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold">Status</h2>
-
-      {/* Monitoring Status */}
-      <Card>
-        <CardContent className="flex items-center justify-between py-3">
-          <span className="text-sm font-medium">Monitoring</span>
-          <Badge variant={status.isRunning ? "default" : "secondary"}>
-            {status.isRunning ? "Active" : "Inactive"}
-          </Badge>
-        </CardContent>
-      </Card>
-
-      {/* Current Idle Time */}
-      <Card className="bg-primary text-primary-foreground">
-        <CardContent className="flex items-center justify-between py-3">
-          <span className="text-sm font-medium">Idle Time</span>
-          <span className="text-2xl font-bold tabular-nums">
-            {formatDuration(idleSeconds)}
-          </span>
-        </CardContent>
-      </Card>
-
-      {/* Running Timer */}
-      <Card>
-        <CardContent className="py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Running Timer</span>
-            <span
-              className={
-                status.runningTaskName
-                  ? "text-sm font-medium text-primary"
-                  : "text-sm text-muted-foreground italic"
-              }
-            >
-              {status.runningTaskName || "No timer running"}
-            </span>
+      {/* Hero Timer Display */}
+      <div className="brutalist-border bg-card p-6">
+        {/* Large Timer */}
+        <div className="text-center py-4">
+          <div
+            className={`text-timer tabular-nums ${
+              isRunning ? "timer-glow" : "timer-idle"
+            }`}
+          >
+            {timerDisplay}
           </div>
-          {/* Show additional info for running timers */}
-          {status.runningTaskName && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {status.runningTimerIsManual && (
-                <Badge variant="secondary" className="text-xs">Manual</Badge>
-              )}
-              {status.runningTimerBillable && (
-                <Badge variant="outline" className="text-xs border-green-500 text-green-600">Billable</Badge>
-              )}
-              {status.runningTimerTags.map((tag) => (
-                <span
-                  key={tag.name}
-                  className="inline-flex items-center rounded-md px-1.5 py-0 text-[10px] font-medium"
-                  style={{
-                    backgroundColor: tag.tag_bg || "#888888",
-                    color: "#ffffff",
-                    border: `1px solid ${tag.tag_bg || "#888888"}`,
-                  }}
-                >
-                  {tag.name}
-                </span>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {/* Elapsed Time (only show when timer is running) */}
-      {status.runningTaskName && elapsedTime && (
-        <Card className="bg-emerald-600 text-white dark:bg-emerald-700">
-          <CardContent className="flex items-center justify-between py-3">
-            <span className="text-sm font-medium">Elapsed</span>
-            <span className="text-xl font-bold tabular-nums">{elapsedTime}</span>
-          </CardContent>
-        </Card>
-      )}
+          {/* Task Name or Placeholder */}
+          <div className="mt-3">
+            {isRunning ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="text-sm font-medium truncate max-w-[250px]">
+                    {status.runningTaskName}
+                  </span>
+                </div>
+                {/* Timer metadata */}
+                {(status.runningTimerIsManual ||
+                  status.runningTimerBillable ||
+                  status.runningTimerTags.length > 0) && (
+                  <div className="flex flex-wrap items-center justify-center gap-1.5">
+                    {status.runningTimerIsManual && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        MANUAL
+                      </Badge>
+                    )}
+                    {status.runningTimerBillable && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 border-emerald-600 text-emerald-500"
+                      >
+                        BILLABLE
+                      </Badge>
+                    )}
+                    {status.runningTimerTags.map((tag) => (
+                      <span
+                        key={tag.name}
+                        className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider"
+                        style={{
+                          backgroundColor: tag.tag_bg || "#555",
+                          color: "#fff",
+                        }}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="text-sm text-muted-foreground uppercase tracking-wider">
+                No timer running
+              </span>
+            )}
+          </div>
+        </div>
 
-      {/* Last Stopped */}
-      {status.lastStoppedAt && status.lastStoppedTaskName && (
-        <Card className="border-l-4 border-l-amber-500">
-          <CardContent className="py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Last Stopped</span>
-              <span className="text-xs text-muted-foreground">
-                {formatRelativeTime(status.lastStoppedAt)}
+        {/* Status Bar */}
+        <div className="brutalist-divider mt-4 pt-3">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="brutalist-label">Idle</span>
+              <span className="font-mono-display font-semibold tabular-nums">
+                {formatDuration(idleSeconds)}
               </span>
             </div>
-            <p className="text-sm mt-1 text-muted-foreground">
-              "{status.lastStoppedTaskName}"
-            </p>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-1.5">
+              <span className="brutalist-label">Monitor</span>
+              <span
+                className={`font-mono-display font-semibold ${
+                  status.isRunning ? "text-emerald-500" : "text-muted-foreground"
+                }`}
+              >
+                {status.isRunning ? "ON" : "OFF"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Last Stopped - Compact One-liner */}
+      {status.lastStoppedAt && status.lastStoppedTaskName && (
+        <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+          <span className="truncate max-w-[200px]">
+            Last: "{status.lastStoppedTaskName}"
+          </span>
+          <span className="shrink-0 ml-2">
+            {formatRelativeTime(status.lastStoppedAt)}
+          </span>
+        </div>
       )}
 
       {/* Error Display */}
       {status.error && (
-        <Card className="bg-destructive/10 border-destructive">
-          <CardContent className="py-3">
-            <p className="text-sm text-destructive">
-              <strong>Error:</strong> {status.error}
-            </p>
-          </CardContent>
-        </Card>
+        <div className="brutalist-border border-destructive bg-destructive/10 p-3">
+          <p className="text-sm text-destructive font-mono-display">
+            {status.error}
+          </p>
+        </div>
       )}
     </div>
   );

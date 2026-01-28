@@ -3,14 +3,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================
+   BRUTALIST TIMER THEME
+   Industrial control panel aesthetic with
+   warm amber accents and sharp geometry
+   ============================================ */
+
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -42,76 +48,101 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* Custom font family for timer display */
+  --font-mono-display: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
+
+/* ============================================
+   BRUTALIST COLOR PALETTE - Dark Mode Always
+   Warm blacks with amber accents
+   ============================================ */
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0;
+  
+  /* Base - warm black */
+  --background: oklch(0.12 0.008 60);
+  --foreground: oklch(0.90 0.015 75);
+  
+  /* Cards/surfaces - subtle lift */
+  --card: oklch(0.16 0.008 60);
+  --card-foreground: oklch(0.90 0.015 75);
+  
+  /* Popover */
+  --popover: oklch(0.18 0.008 60);
+  --popover-foreground: oklch(0.90 0.015 75);
+  
+  /* Primary - warm amber */
+  --primary: oklch(0.75 0.16 65);
+  --primary-foreground: oklch(0.12 0.008 60);
+  
+  /* Secondary - muted surface */
+  --secondary: oklch(0.22 0.01 60);
+  --secondary-foreground: oklch(0.85 0.015 75);
+  
+  /* Muted */
+  --muted: oklch(0.20 0.008 60);
+  --muted-foreground: oklch(0.55 0.015 60);
+  
+  /* Accent - bright gold for running timer */
+  --accent: oklch(0.82 0.17 75);
+  --accent-foreground: oklch(0.12 0.008 60);
+  
+  /* Destructive - muted rust red */
+  --destructive: oklch(0.55 0.18 25);
+  
+  /* Borders - visible, structural */
+  --border: oklch(0.30 0.015 60);
+  --input: oklch(0.25 0.01 60);
+  --ring: oklch(0.75 0.16 65);
+  
+  /* Charts - warm palette */
+  --chart-1: oklch(0.75 0.16 65);
+  --chart-2: oklch(0.65 0.14 45);
+  --chart-3: oklch(0.55 0.12 30);
+  --chart-4: oklch(0.70 0.10 85);
+  --chart-5: oklch(0.60 0.08 100);
+  
+  /* Sidebar */
+  --sidebar: oklch(0.14 0.008 60);
+  --sidebar-foreground: oklch(0.90 0.015 75);
+  --sidebar-primary: oklch(0.75 0.16 65);
+  --sidebar-primary-foreground: oklch(0.12 0.008 60);
+  --sidebar-accent: oklch(0.22 0.01 60);
+  --sidebar-accent-foreground: oklch(0.85 0.015 75);
+  --sidebar-border: oklch(0.30 0.015 60);
+  --sidebar-ring: oklch(0.75 0.16 65);
+  
+  color-scheme: dark;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+/* Force dark mode - brutalist theme is always dark */
+.dark,
+:root:not(.light) {
+  --background: oklch(0.12 0.008 60);
+  --foreground: oklch(0.90 0.015 75);
+  --card: oklch(0.16 0.008 60);
+  --card-foreground: oklch(0.90 0.015 75);
+  --popover: oklch(0.18 0.008 60);
+  --popover-foreground: oklch(0.90 0.015 75);
+  --primary: oklch(0.75 0.16 65);
+  --primary-foreground: oklch(0.12 0.008 60);
+  --secondary: oklch(0.22 0.01 60);
+  --secondary-foreground: oklch(0.85 0.015 75);
+  --muted: oklch(0.20 0.008 60);
+  --muted-foreground: oklch(0.55 0.015 60);
+  --accent: oklch(0.82 0.17 75);
+  --accent-foreground: oklch(0.12 0.008 60);
+  --destructive: oklch(0.55 0.18 25);
+  --border: oklch(0.30 0.015 60);
+  --input: oklch(0.25 0.01 60);
+  --ring: oklch(0.75 0.16 65);
 }
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
 
 @layer base {
   * {
@@ -123,44 +154,209 @@
     @apply h-full overflow-hidden;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "ss02", "cv01";
   }
 }
 
-/* Tauri-specific: Make title bar area draggable on macOS */
+/* ============================================
+   TYPOGRAPHY UTILITIES
+   ============================================ */
+
+.font-mono-display {
+  font-family: var(--font-mono-display);
+  font-feature-settings: "tnum", "zero";
+}
+
+.text-timer {
+  font-family: var(--font-mono-display);
+  font-size: 3.5rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-feature-settings: "tnum", "zero";
+}
+
+.text-timer-sm {
+  font-family: var(--font-mono-display);
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1;
+  font-feature-settings: "tnum", "zero";
+}
+
+/* ============================================
+   BRUTALIST UTILITIES
+   ============================================ */
+
+.brutalist-border {
+  border: 2px solid var(--border);
+}
+
+.brutalist-border-thick {
+  border: 3px solid var(--border);
+}
+
+.brutalist-divider {
+  border-top: 1px solid var(--border);
+}
+
+/* Uppercase labels with letter spacing */
+.brutalist-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* ============================================
+   TIMER GLOW EFFECT
+   Subtle amber pulse when timer is running
+   ============================================ */
+
+@keyframes timer-pulse {
+  0%, 100% {
+    text-shadow: 
+      0 0 20px oklch(0.75 0.16 65 / 0.4),
+      0 0 40px oklch(0.75 0.16 65 / 0.2);
+  }
+  50% {
+    text-shadow: 
+      0 0 30px oklch(0.75 0.16 65 / 0.6),
+      0 0 60px oklch(0.75 0.16 65 / 0.3);
+  }
+}
+
+.timer-glow {
+  color: oklch(0.82 0.17 75);
+  animation: timer-pulse 2s ease-in-out infinite;
+}
+
+.timer-idle {
+  color: var(--muted-foreground);
+}
+
+/* ============================================
+   NOISE TEXTURE OVERLAY
+   Subtle grain for industrial feel
+   ============================================ */
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* ============================================
+   TAURI-SPECIFIC STYLES
+   ============================================ */
+
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
 }
 
-/* Prevent text selection in draggable regions */
 [data-tauri-drag-region] * {
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* System dark mode detection */
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-  }
-  :root:not(.light) {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-  }
+/* Make interactive elements within drag region clickable */
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] [role="tab"] {
+  -webkit-app-region: no-drag;
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   Minimal, matches theme
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid var(--background);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* ============================================
+   COMPONENT OVERRIDES
+   Ensure brutalist styling on UI primitives
+   ============================================ */
+
+/* Cards - thick borders, no shadows */
+[data-slot="card"] {
+  border-width: 2px;
+  box-shadow: none;
+}
+
+/* Buttons - sharp, bold */
+button {
+  border-radius: 0 !important;
+}
+
+/* Inputs - visible borders */
+input, textarea, select {
+  border-radius: 0 !important;
+  border-width: 2px;
+}
+
+/* Badges - rectangular */
+[data-slot="badge"] {
+  border-radius: 0;
+  text-transform: uppercase;
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+}
+
+/* Tabs - underline style */
+[role="tablist"] {
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 2px solid var(--border);
+  padding: 0;
+}
+
+[role="tab"] {
+  border-radius: 0;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+
+[role="tab"][data-state="active"] {
+  background: transparent;
+  border-bottom-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Switch - rectangular track */
+[role="switch"] {
+  border-radius: 0 !important;
+}
+
+[role="switch"] span {
+  border-radius: 0 !important;
 }
