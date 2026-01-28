@@ -141,6 +141,8 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
   const lastNoTimerWarningAtRef = useRef<number | null>(null);
   /** Task ID of the last running timer we added to recent tasks */
   const lastAddedTaskIdRef = useRef<string | null>(null);
+  /** Whether the user was active (not idle) on the previous check - used to detect idle→active transitions */
+  const wasActiveRef = useRef<boolean>(true);
   /** Interval for fast tray updates (10s) when timer is running */
   const trayIntervalRef = useRef<number | null>(null);
 
@@ -280,6 +282,13 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
             
             // Consider user "active" if idle less than 2 minutes
             const isUserActive = result.idle_duration < 120;
+
+            // Reset "time without timer" if user just became active after being idle
+            // This prevents showing huge numbers after waking from sleep/idle
+            if (isUserActive && !wasActiveRef.current) {
+              lastTimerSeenAtRef.current = now;
+            }
+            wasActiveRef.current = isUserActive;
 
             // Initialize lastTimerSeenAt if this is the first check with no timer
             if (lastTimerSeenAtRef.current === null) {
