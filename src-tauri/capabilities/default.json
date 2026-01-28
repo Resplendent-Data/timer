@@ -19,6 +19,7 @@
     "notification:allow-request-permission",
     "notification:allow-notify",
     "updater:default",
-    "process:default"
+    "process:default",
+    "clipboard-manager:allow-write-text"
   ]
 }

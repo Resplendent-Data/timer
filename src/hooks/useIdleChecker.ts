@@ -48,6 +48,8 @@ export interface IdleStatus {
   currentIdleSeconds: number;
   /** Name of the currently running task (if any) */
   runningTaskName: string | null;
+  /** ID of the currently running task (if any, null for manual timers) */
+  runningTaskId: string | null;
   /** Start time of the running timer (for elapsed time calculation) */
   runningTaskStartMs: number | null;
   /** Whether the running timer is a manual timer (no task) */
@@ -150,6 +152,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     isRunning: false,
     currentIdleSeconds: 0,
     runningTaskName: null,
+    runningTaskId: null,
     runningTaskStartMs: null,
     runningTimerIsManual: false,
     runningTimerDescription: null,
@@ -207,6 +210,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           lastStoppedTaskName: result.task_name,
           lastStoppedTaskId: result.task_id,
           runningTaskName: null,
+          runningTaskId: null,
           runningTaskStartMs: null,
           runningTimerIsManual: false,
           runningTimerDescription: null,
@@ -253,6 +257,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           setStatus((prev) => ({
             ...prev,
             runningTaskName: timerInfo?.name ?? null,
+            runningTaskId: timerInfo?.task_id ?? null,
             runningTaskStartMs: timerInfo?.start_time_ms ?? null,
             runningTimerIsManual: timerInfo?.is_manual ?? false,
             runningTimerDescription: timerInfo?.description ?? null,
@@ -386,6 +391,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
                 lastStoppedTaskName: timerInfo.name,
                 lastStoppedTaskId: timerInfo.task_id,
                 runningTaskName: null,
+                runningTaskId: null,
                 runningTaskStartMs: null,
                 runningTimerIsManual: false,
                 runningTimerDescription: null,

@@ -6,8 +6,10 @@
  */
 
 import { useEffect, useState } from "react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { IdleStatus, useIdleTime } from "../hooks/useIdleChecker";
 import { Badge } from "@/components/ui/badge";
+import { Copy, Check } from "lucide-react";
 
 interface StatusIndicatorProps {
   status: IdleStatus;
@@ -70,6 +72,20 @@ function formatRelativeTime(date: Date): string {
 }
 
 /**
+ * Generate a git-safe branch name from a task title and task ID.
+ * Format: {sanitized-title}-CU-{taskId} (all lowercase)
+ */
+function generateBranchName(taskName: string, taskId: string): string {
+  // Remove all characters except alphanumeric and spaces, then replace spaces with hyphens
+  const sanitized = taskName
+    .replace(/[^a-zA-Z0-9\s]/g, "") // Remove special characters
+    .trim()
+    .replace(/\s+/g, "-"); // Replace spaces with hyphens
+
+  return `${sanitized}-CU-${taskId}`.toLowerCase();
+}
+
+/**
  * Hook to get live elapsed time from a start timestamp.
  */
 function useTimerDisplay(startTimeMs: number | null): string {
@@ -100,8 +116,24 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
   const { idleSeconds } = useIdleTime();
   // Get live elapsed time for running timer
   const timerDisplay = useTimerDisplay(status.runningTaskStartMs);
+  // Track copy feedback state
+  const [copied, setCopied] = useState(false);
 
   const isRunning = !!status.runningTaskName;
+  const canCopyBranch = isRunning && status.runningTaskId && !status.runningTimerIsManual;
+
+  const handleCopyBranch = async () => {
+    if (!status.runningTaskName || !status.runningTaskId) return;
+
+    const branchName = generateBranchName(status.runningTaskName, status.runningTaskId);
+    try {
+      await writeText(branchName);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy branch name:", error);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -126,6 +158,19 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
                   <span className="text-sm font-medium truncate max-w-[250px]">
                     {status.runningTaskName}
                   </span>
+                  {canCopyBranch && (
+                    <button
+                      onClick={handleCopyBranch}
+                      className="p-1 hover:bg-muted rounded transition-colors"
+                      title="Copy git branch name"
+                    >
+                      {copied ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                      )}
+                    </button>
+                  )}
                 </div>
                 {/* Timer metadata */}
                 {(status.runningTimerIsManual ||
