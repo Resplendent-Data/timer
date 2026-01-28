@@ -161,13 +161,19 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
                   {canCopyBranch && (
                     <button
                       onClick={handleCopyBranch}
-                      className="p-1 hover:bg-muted rounded transition-colors"
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
                       title="Copy git branch name"
                     >
                       {copied ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <>
+                          <Check className="w-3 h-3 text-emerald-500" />
+                          <span className="text-emerald-500">Copied</span>
+                        </>
                       ) : (
-                        <Copy className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy git branch</span>
+                        </>
                       )}
                     </button>
                   )}
