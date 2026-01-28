@@ -7,6 +7,7 @@ interface IdleEvent {
   timer_stopped: boolean;
   task_name: string | null;
   task_id: string | null;
+  session_duration_secs: number;
 }
 
 interface IdleHistoryProps {
@@ -68,6 +69,11 @@ export function IdleHistory({ events }: IdleHistoryProps) {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {formatRelativeTime(event.started_at)}
+                  {event.timer_stopped && event.session_duration_secs > 0 && (
+                    <span className="ml-2 text-amber-600 dark:text-amber-400">
+                      · Timer ran {formatDuration(event.session_duration_secs)}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>

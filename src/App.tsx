@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { checkNotificationPermission } from "./lib/notification";
 import { useIdleChecker } from "./hooks/useIdleChecker";
+import { useActivityHeartbeat } from "./hooks/useActivityHeartbeat";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
@@ -24,6 +25,9 @@ function App() {
 
   // Start the background idle checker (runs every minute)
   const idleStatus = useIdleChecker(60_000);
+
+  // Start the activity heartbeat (runs every 30 seconds for stats tracking)
+  useActivityHeartbeat();
 
   // Create or close the widget window based on settings
   const updateWidgetState = useCallback(async (enabled: boolean) => {

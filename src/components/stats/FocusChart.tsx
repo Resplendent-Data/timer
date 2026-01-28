@@ -1,14 +1,15 @@
 import { cn } from "@/lib/utils";
 
-interface DailyStats {
+interface DailyActivity {
   date: string;
-  focus_minutes: number;
-  idle_count: number;
-  longest_focus_mins: number;
+  active_seconds: number;
+  idle_seconds: number;
+  session_count: number;
+  session_seconds: number;
 }
 
 interface FocusChartProps {
-  data: DailyStats[];
+  data: DailyActivity[];
 }
 
 function formatDay(dateStr: string): string {
@@ -16,11 +17,14 @@ function formatDay(dateStr: string): string {
   return date.toLocaleDateString("en-US", { weekday: "short" });
 }
 
-function formatHours(minutes: number): string {
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return "0m";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  return `${minutes}m`;
 }
 
 export function FocusChart({ data }: FocusChartProps) {
@@ -28,14 +32,15 @@ export function FocusChart({ data }: FocusChartProps) {
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  const maxMinutes = Math.max(...sortedData.map((d) => d.focus_minutes), 60);
+  // Max should be at least 1 hour for visual purposes
+  const maxSeconds = Math.max(...sortedData.map((d) => d.active_seconds), 3600);
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-foreground">This Week</p>
+      <p className="text-sm font-medium text-foreground">Last 7 Days</p>
       <div className="flex items-end justify-between gap-1 h-24">
         {sortedData.map((day) => {
-          const heightPercent = (day.focus_minutes / maxMinutes) * 100;
+          const heightPercent = (day.active_seconds / maxSeconds) * 100;
           const isToday =
             new Date(day.date).toDateString() === new Date().toDateString();
 
@@ -51,12 +56,12 @@ export function FocusChart({ data }: FocusChartProps) {
                     isToday
                       ? "bg-gradient-to-t from-purple-500 to-indigo-500"
                       : "bg-primary/60",
-                    day.focus_minutes === 0 && "bg-muted h-1"
+                    day.active_seconds === 0 && "bg-muted h-1"
                   )}
                   style={{
-                    height: day.focus_minutes > 0 ? `${heightPercent}%` : "4px",
+                    height: day.active_seconds > 0 ? `${Math.max(heightPercent, 5)}%` : "4px",
                   }}
-                  title={`${formatHours(day.focus_minutes)} focus time`}
+                  title={`${formatDuration(day.active_seconds)} active`}
                 />
               </div>
               <span
@@ -73,6 +78,7 @@ export function FocusChart({ data }: FocusChartProps) {
           );
         })}
       </div>
+      <p className="text-xs text-center text-muted-foreground">Active time per day</p>
     </div>
   );
 }

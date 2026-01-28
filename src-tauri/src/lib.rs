@@ -202,11 +202,26 @@ async fn send_notification_linux(_title: String, _body: String) -> Result<(), St
     Err("send_notification_linux is only available on Linux".to_string())
 }
 
+/// Get productivity stats for the stats screen.
 #[tauri::command]
 async fn get_productivity_stats() -> Result<ProductivityStats, String> {
     stats::get_productivity_stats().map_err(|e| e.to_string())
 }
 
+/// Record a heartbeat from the frontend (called every 30 seconds).
+/// Tracks whether the user is currently active or idle.
+#[tauri::command]
+fn record_heartbeat(is_idle: bool) {
+    stats::record_heartbeat(is_idle);
+}
+
+/// Record a ClickUp timer session when stopped.
+#[tauri::command]
+fn record_timer_session(duration_secs: i64) {
+    stats::record_timer_session(duration_secs);
+}
+
+/// Record an idle event (when user exceeds idle threshold).
 #[tauri::command]
 fn record_idle_event(
     started_at: i64,
@@ -214,8 +229,9 @@ fn record_idle_event(
     timer_stopped: bool,
     task_name: Option<String>,
     task_id: Option<String>,
+    session_duration_secs: i64,
 ) {
-    stats::record_idle_event(started_at, duration_secs, timer_stopped, task_name, task_id);
+    stats::record_idle_event(started_at, duration_secs, timer_stopped, task_name, task_id, session_duration_secs);
 }
 
 /// Create the always-on-top widget window.
@@ -426,6 +442,8 @@ pub fn run() {
             update_tray_timer_display,
             send_notification_linux,
             get_productivity_stats,
+            record_heartbeat,
+            record_timer_session,
             record_idle_event,
             create_widget_window,
             close_widget_window,

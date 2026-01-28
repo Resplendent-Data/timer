@@ -463,9 +463,6 @@ pub async fn check_and_stop_timer_impl(
         });
     }
 
-    // User exceeded idle threshold - record the idle event
-    stats::record_idle_event(now, idle_secs as i64, false, None, None);
-
     // User is idle, check for running timer using the dedicated endpoint
     let client = reqwest::Client::new();
 
@@ -499,6 +496,14 @@ pub async fn check_and_stop_timer_impl(
         if entry.is_running() {
             let task_name = entry.display_name();
             let task_id = entry.task_id();
+            
+            // Calculate session duration from start time
+            let session_duration_secs = entry.start_time_ms()
+                .map(|start_ms| {
+                    let now_ms = chrono::Utc::now().timestamp_millis();
+                    ((now_ms - start_ms) / 1000).max(0)
+                })
+                .unwrap_or(0);
 
             // Stop the running timer
             let stop_url = format!(
@@ -517,7 +522,7 @@ pub async fn check_and_stop_timer_impl(
             if !stop_response.status().is_success() {
                 let status = stop_response.status();
                 let body = stop_response.text().await.unwrap_or_default();
-                stats::record_idle_event(now, idle_secs as i64, false, Some(task_name.clone()), task_id.clone());
+                stats::record_idle_event(now, idle_secs as i64, false, Some(task_name.clone()), task_id.clone(), 0);
                 return Ok(IdleCheckResult {
                     stopped: false,
                     task_name: Some(task_name),
@@ -527,7 +532,10 @@ pub async fn check_and_stop_timer_impl(
                 });
             }
 
-            stats::record_idle_event(now, idle_secs as i64, true, Some(task_name.clone()), task_id.clone());
+            // Record the successful timer stop with session duration
+            stats::record_idle_event(now, idle_secs as i64, true, Some(task_name.clone()), task_id.clone(), session_duration_secs);
+            stats::record_timer_session(session_duration_secs);
+            
             return Ok(IdleCheckResult {
                 stopped: true,
                 task_name: Some(task_name),
@@ -539,7 +547,7 @@ pub async fn check_and_stop_timer_impl(
     }
 
     // No running timer found - record that we went idle but no timer was active
-    stats::record_idle_event(now, idle_secs as i64, false, None, None);
+    stats::record_idle_event(now, idle_secs as i64, false, None, None, 0);
     Ok(IdleCheckResult {
         stopped: false,
         task_name: None,

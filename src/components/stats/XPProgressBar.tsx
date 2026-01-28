@@ -13,6 +13,8 @@ export function XPProgressBar({
   xpForNextLevel,
   progressPercent,
 }: XPProgressBarProps) {
+  const xpToGo = xpForNextLevel - currentXp;
+  
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -23,15 +25,15 @@ export function XPProgressBar({
           <div>
             <p className="text-sm font-medium text-foreground">Level {level}</p>
             <p className="text-xs text-muted-foreground">
-              {currentXp.toLocaleString()} XP total
+              {currentXp.toLocaleString()} XP
             </p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-xs text-muted-foreground">Next level</p>
           <p className="text-sm font-medium text-foreground">
-            {xpForNextLevel.toLocaleString()} XP
+            {xpToGo > 0 ? xpToGo.toLocaleString() : 0}
           </p>
+          <p className="text-xs text-muted-foreground">XP to level {level + 1}</p>
         </div>
       </div>
       <Progress
@@ -40,7 +42,7 @@ export function XPProgressBar({
         indicatorClassName="bg-gradient-to-r from-purple-500 to-indigo-600 transition-all duration-500"
       />
       <p className="text-xs text-center text-muted-foreground">
-        {progressPercent.toFixed(0)}% to Level {level + 1}
+        Earn 1 XP for every minute of active time
       </p>
     </div>
   );
