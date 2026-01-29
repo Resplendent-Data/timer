@@ -73,16 +73,17 @@ function formatRelativeTime(date: Date): string {
 
 /**
  * Generate a git-safe branch name from a task title and task ID.
- * Format: {sanitized-title}-CU-{taskId} (all lowercase)
+ * Format: {sanitized-title}-CU-{taskId} (title lowercase, CU uppercase)
  */
 function generateBranchName(taskName: string, taskId: string): string {
   // Remove all characters except alphanumeric and spaces, then replace spaces with hyphens
   const sanitized = taskName
     .replace(/[^a-zA-Z0-9\s]/g, "") // Remove special characters
     .trim()
-    .replace(/\s+/g, "-"); // Replace spaces with hyphens
+    .replace(/\s+/g, "-") // Replace spaces with hyphens
+    .toLowerCase();
 
-  return `${sanitized}-CU-${taskId}`.toLowerCase();
+  return `${sanitized}-CU-${taskId}`;
 }
 
 /**
