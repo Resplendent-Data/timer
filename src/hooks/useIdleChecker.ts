@@ -31,6 +31,7 @@ interface TimeEntryTag {
 
 /** Info about the running timer from Rust */
 interface RunningTimerInfo {
+  id: string;
   name: string;
   task_id: string | null;
   start_time_ms: number;
@@ -46,6 +47,8 @@ export interface IdleStatus {
   isRunning: boolean;
   /** Current idle time in seconds */
   currentIdleSeconds: number;
+  /** ID of the current time entry (for rt-tag detection) */
+  runningTimerId: string | null;
   /** Name of the currently running task (if any) */
   runningTaskName: string | null;
   /** ID of the currently running task (if any, null for manual timers) */
@@ -147,10 +150,13 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
   const wasActiveRef = useRef<boolean>(true);
   /** Interval for fast tray updates (10s) when timer is running */
   const trayIntervalRef = useRef<number | null>(null);
+  /** Set of time entry IDs we've already added the rt tag to (to avoid duplicate calls) */
+  const taggedTimerIdsRef = useRef<Set<string>>(new Set());
 
   const [status, setStatus] = useState<IdleStatus>({
     isRunning: false,
     currentIdleSeconds: 0,
+    runningTimerId: null,
     runningTaskName: null,
     runningTaskId: null,
     runningTaskStartMs: null,
@@ -209,6 +215,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           lastStoppedAt: new Date(),
           lastStoppedTaskName: result.task_name,
           lastStoppedTaskId: result.task_id,
+          runningTimerId: null,
           runningTaskName: null,
           runningTaskId: null,
           runningTaskStartMs: null,
@@ -249,6 +256,30 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
                 console.error("[useIdleChecker] Failed to add recent task:", err);
               });
             }
+
+            // Check if running timer needs the "rt" tag added (for externally-started timers)
+            const hasRtTag = timerInfo.tags.some((t) => t.name === "rt");
+            const alreadyTagged = taggedTimerIdsRef.current.has(timerInfo.id);
+            
+            if (!hasRtTag && !alreadyTagged) {
+              console.log("[useIdleChecker] Adding rt tag to externally-started timer:", timerInfo.id);
+              taggedTimerIdsRef.current.add(timerInfo.id);
+              
+              invoke("add_rt_tag_to_time_entry", {
+                apiKey: settings.clickupApiKey,
+                teamId: settings.clickupTeamId,
+                timeEntryId: timerInfo.id,
+                existingTags: timerInfo.tags,
+              }).then((added) => {
+                if (added) {
+                  console.log("[useIdleChecker] Successfully added rt tag to time entry:", timerInfo.id);
+                }
+              }).catch((err) => {
+                console.error("[useIdleChecker] Failed to add rt tag:", err);
+                // Remove from tracked set so we can retry next poll
+                taggedTimerIdsRef.current.delete(timerInfo.id);
+              });
+            }
           } else {
             // No timer running - reset the last added task ID so we can add it again later
             lastAddedTaskIdRef.current = null;
@@ -256,6 +287,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
 
           setStatus((prev) => ({
             ...prev,
+            runningTimerId: timerInfo?.id ?? null,
             runningTaskName: timerInfo?.name ?? null,
             runningTaskId: timerInfo?.task_id ?? null,
             runningTaskStartMs: timerInfo?.start_time_ms ?? null,
@@ -390,6 +422,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
                 lastStoppedAt: new Date(),
                 lastStoppedTaskName: timerInfo.name,
                 lastStoppedTaskId: timerInfo.task_id,
+                runningTimerId: null,
                 runningTaskName: null,
                 runningTaskId: null,
                 runningTaskStartMs: null,

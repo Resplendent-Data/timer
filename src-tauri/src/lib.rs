@@ -152,6 +152,49 @@ async fn get_running_timer_info(
     clickup::get_running_timer_info(api_key, team_id).await
 }
 
+/// Tauri command to ensure the "rt" tag exists in the workspace.
+///
+/// This should be called on app startup/settings save to ensure the tag exists
+/// before it's needed.
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+///
+/// # Returns
+///
+/// Ok(true) if tag was created, Ok(false) if it already existed
+#[tauri::command]
+async fn ensure_rt_tag(api_key: String, team_id: String) -> Result<bool, String> {
+    clickup::ensure_rt_tag_exists(api_key, team_id).await
+}
+
+/// Tauri command to add the "rt" tag to a running time entry.
+///
+/// Used to tag time entries that were started externally (e.g., from ClickUp web)
+/// while the Resplendent Timer app is running.
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+/// * `time_entry_id` - The ID of the time entry to tag
+/// * `existing_tags` - Current tags on the time entry (to preserve them)
+///
+/// # Returns
+///
+/// Ok(true) if tag was added, Ok(false) if it was already present
+#[tauri::command]
+async fn add_rt_tag_to_time_entry(
+    api_key: String,
+    team_id: String,
+    time_entry_id: String,
+    existing_tags: Vec<TimeEntryTag>,
+) -> Result<bool, String> {
+    clickup::add_rt_tag_to_time_entry(api_key, team_id, time_entry_id, existing_tags).await
+}
+
 /// Tauri command to update the tray menu timer display text.
 ///
 /// # Arguments
@@ -450,6 +493,8 @@ pub fn run() {
             close_widget_window,
             show_main_window,
             save_widget_position,
+            ensure_rt_tag,
+            add_rt_tag_to_time_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

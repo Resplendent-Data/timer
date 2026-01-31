@@ -24,6 +24,8 @@ pub struct IdleCheckResult {
 /// Information about a currently running timer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunningTimerInfo {
+    /// Time entry ID (needed for updating tags on externally-started timers)
+    pub id: String,
     /// Name of the task or description for manual timers
     pub name: String,
     /// Task ID (None for manual timers without a task)
@@ -50,7 +52,6 @@ struct RunningTimeEntryResponse {
 /// A currently running ClickUp time entry
 #[derive(Debug, Deserialize)]
 struct RunningTimeEntry {
-    #[allow(dead_code)]
     id: String,
     /// Task is optional - manual timers don't have a task
     task: Option<Task>,
@@ -287,6 +288,149 @@ pub async fn get_time_entry_tags(
     Ok(tags_response.data)
 }
 
+/// The name of the tag used to identify time entries tracked by Resplendent Timer
+pub const RT_TAG_NAME: &str = "rt";
+
+/// Ensure the "rt" tag exists in the workspace for identifying Resplendent Timer entries.
+///
+/// If the tag doesn't exist, it will be created with a distinctive purple color.
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+///
+/// # Returns
+///
+/// Ok(true) if tag was created, Ok(false) if it already existed
+pub async fn ensure_rt_tag_exists(api_key: String, team_id: String) -> Result<bool, String> {
+    // First check if the tag already exists
+    let existing_tags = get_time_entry_tags(api_key.clone(), team_id.clone()).await?;
+    
+    if existing_tags.iter().any(|t| t.name == RT_TAG_NAME) {
+        return Ok(false); // Tag already exists
+    }
+
+    // Create the tag with a distinctive purple color
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/tags",
+        team_id
+    );
+
+    let body = serde_json::json!({
+        "tag": {
+            "name": RT_TAG_NAME,
+            "tag_bg": "#7b68ee",  // Medium slate blue - distinctive but not jarring
+            "tag_fg": "#ffffff"
+        }
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to create rt tag: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error creating rt tag ({}): {}", status, body));
+    }
+
+    Ok(true)
+}
+
+/// Add the "rt" tag to an existing time entry.
+///
+/// This is used to tag time entries that were started externally (e.g., from ClickUp web)
+/// while the Resplendent Timer app is running.
+///
+/// # Arguments
+///
+/// * `api_key` - ClickUp API key
+/// * `team_id` - ClickUp team/workspace ID
+/// * `time_entry_id` - The ID of the time entry to tag
+/// * `existing_tags` - Current tags on the time entry (to preserve them)
+///
+/// # Returns
+///
+/// Ok(true) if tag was added, Ok(false) if it was already present
+pub async fn add_rt_tag_to_time_entry(
+    api_key: String,
+    team_id: String,
+    time_entry_id: String,
+    existing_tags: Vec<TimeEntryTag>,
+) -> Result<bool, String> {
+    // Check if rt tag is already present
+    if existing_tags.iter().any(|t| t.name == RT_TAG_NAME) {
+        return Ok(false); // Already has the tag
+    }
+
+    // Use the dedicated "Add tags to time entries" endpoint
+    // POST /team/{team_id}/time_entries/tags
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/tags",
+        team_id
+    );
+
+    // The endpoint expects time_entry_ids and tags arrays
+    let body = serde_json::json!({
+        "time_entry_ids": [time_entry_id],
+        "tags": [{
+            "name": RT_TAG_NAME,
+            "tag_bg": "#7b68ee",
+            "tag_fg": "#ffffff"
+        }]
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to add rt tag to time entry: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error adding rt tag ({}): {}", status, body));
+    }
+
+    Ok(true)
+}
+
+/// Helper function to ensure "rt" tag is included in the tags list.
+///
+/// Used when starting timers to always include the rt tag.
+/// Returns tag objects with name and color fields as required by ClickUp API.
+fn build_tag_objects_with_rt(tags: Option<Vec<String>>) -> Vec<serde_json::Value> {
+    let mut result = tags.unwrap_or_default();
+    if !result.iter().any(|t| t == RT_TAG_NAME) {
+        result.push(RT_TAG_NAME.to_string());
+    }
+    
+    result.into_iter().map(|name| {
+        if name == RT_TAG_NAME {
+            // Use distinctive purple color for rt tag
+            serde_json::json!({
+                "name": RT_TAG_NAME,
+                "tag_bg": "#7b68ee",
+                "tag_fg": "#ffffff"
+            })
+        } else {
+            // For other tags, just use name (ClickUp will use existing tag's colors)
+            serde_json::json!({"name": name})
+        }
+    }).collect()
+}
+
 /// Start a time entry for a specific task.
 ///
 /// # Arguments
@@ -315,16 +459,9 @@ pub async fn start_timer(
         "billable": billable
     });
 
-    // Add tags if provided (format: [{"name": "tag1"}, {"name": "tag2"}])
-    if let Some(tag_names) = tags {
-        if !tag_names.is_empty() {
-            let tag_objects: Vec<serde_json::Value> = tag_names
-                .into_iter()
-                .map(|name| serde_json::json!({"name": name}))
-                .collect();
-            body["tags"] = serde_json::Value::Array(tag_objects);
-        }
-    }
+    // Always include "rt" tag, plus any user-selected tags
+    let tag_objects = build_tag_objects_with_rt(tags);
+    body["tags"] = serde_json::Value::Array(tag_objects);
 
     let response = client
         .post(&url)
@@ -337,8 +474,8 @@ pub async fn start_timer(
 
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("ClickUp API error ({}): {}", status, body));
+        let response_text = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error ({}): {}", status, response_text));
     }
 
     Ok(())
@@ -403,16 +540,9 @@ pub async fn start_manual_timer(
         }
     }
 
-    // Add tags if provided (format: [{"name": "tag1"}, {"name": "tag2"}])
-    if let Some(tag_names) = tags {
-        if !tag_names.is_empty() {
-            let tag_objects: Vec<serde_json::Value> = tag_names
-                .into_iter()
-                .map(|name| serde_json::json!({"name": name}))
-                .collect();
-            body["tags"] = serde_json::Value::Array(tag_objects);
-        }
-    }
+    // Always include "rt" tag, plus any user-selected tags
+    let tag_objects = build_tag_objects_with_rt(tags);
+    body["tags"] = serde_json::Value::Array(tag_objects);
 
     let response = client
         .post(&url)
@@ -651,6 +781,7 @@ pub async fn get_running_timer_info(
 
     let info = running_response.data.and_then(|entry| {
         if entry.is_running() {
+            let id = entry.id.clone();
             let is_manual = entry.task.is_none();
             let description = if entry.description.is_empty() {
                 None
@@ -658,6 +789,7 @@ pub async fn get_running_timer_info(
                 Some(entry.description.clone())
             };
             Some(RunningTimerInfo {
+                id,
                 name: entry.display_name(),
                 task_id: entry.task_id(),
                 start_time_ms: entry.start_time_ms().unwrap_or(0),

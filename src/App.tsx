@@ -62,6 +62,28 @@ function App() {
     });
   }, []);
 
+  // Ensure the "rt" tag exists in ClickUp workspace on app startup
+  useEffect(() => {
+    const ensureRtTag = async () => {
+      try {
+        const settings = await getSettings();
+        if (settings?.clickupApiKey && settings?.clickupTeamId) {
+          const created = await invoke<boolean>("ensure_rt_tag", {
+            apiKey: settings.clickupApiKey,
+            teamId: settings.clickupTeamId,
+          });
+          if (created) {
+            console.log("[App] Created 'rt' tag in ClickUp workspace");
+          }
+        }
+      } catch (error) {
+        console.error("Failed to ensure rt tag exists:", error);
+      }
+    };
+
+    ensureRtTag();
+  }, []);
+
   // Load widget setting on startup and create widget if enabled
   useEffect(() => {
     const loadWidgetSetting = async () => {
