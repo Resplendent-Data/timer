@@ -380,6 +380,17 @@ pub fn run() {
                 }
             }
 
+            // Start Linux sleep observer (detects suspend / hibernate)
+            #[cfg(target_os = "linux")]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = idle::linux_sleep::start_sleep_observer(app_handle).await {
+                        eprintln!("Failed to start Linux sleep observer: {}", e);
+                    }
+                });
+            }
+
             // Create system tray menu items
             let timer_display =
                 MenuItem::with_id(app, "timer_display", "No timer running", false, None::<&str>)?;

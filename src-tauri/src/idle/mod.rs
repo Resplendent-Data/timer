@@ -10,7 +10,8 @@
 //! - **Linux**: Uses a waterfall strategy:
 //!   1. GNOME Mutter IdleMonitor (DBus) - Wayland & X11
 //!   2. KDE ScreenSaver (DBus) - Wayland & X11
-//!   3. X11 XScreenSaver fallback
+//!   3. systemd-logind (DBus) - COSMIC, Sway, Hyprland, and other Wayland compositors
+//!   4. X11 XScreenSaver fallback
 
 #[cfg(target_os = "windows")]
 pub mod windows;
@@ -23,6 +24,9 @@ pub mod macos_sleep;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+
+#[cfg(target_os = "linux")]
+pub mod linux_sleep;
 
 // Re-export the platform-specific implementation
 #[cfg(target_os = "windows")]

@@ -3545,6 +3545,8 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "dirs 5.0.1",
+ "futures-util",
+ "libc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
