@@ -147,8 +147,8 @@ async fn get_logind_idle_time() -> Result<u64, String> {
         .await
         .map_err(|e| format!("logind IdleHint query failed: {}", e))?;
 
-    let idle_hint_variant: Value = idle_hint_reply
-        .body()
+    let idle_hint_body = idle_hint_reply.body();
+    let idle_hint_variant: Value = idle_hint_body
         .deserialize()
         .map_err(|e| format!("Failed to deserialize IdleHint: {}", e))?;
 
@@ -175,8 +175,8 @@ async fn get_logind_idle_time() -> Result<u64, String> {
         .await
         .map_err(|e| format!("logind IdleSinceHint query failed: {}", e))?;
 
-    let idle_since_variant: Value = idle_since_reply
-        .body()
+    let idle_since_body = idle_since_reply.body();
+    let idle_since_variant: Value = idle_since_body
         .deserialize()
         .map_err(|e| format!("Failed to deserialize IdleSinceHint: {}", e))?;
 

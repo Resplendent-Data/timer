@@ -67,7 +67,14 @@ member='PrepareForSleep'";
         while let Some(msg_result) = stream.next().await {
             if let Ok(msg) = msg_result {
                 // Check if this is the PrepareForSleep signal
-                if msg.member().map(|m| m.as_str()) == Some("PrepareForSleep") {
+                // In zbus 5.x, we need to get the header to access member name
+                let is_prepare_for_sleep = msg
+                    .header()
+                    .member()
+                    .map(|m| m.as_str() == "PrepareForSleep")
+                    .unwrap_or(false);
+
+                if is_prepare_for_sleep {
                     // Deserialize the boolean argument
                     if let Ok(body) = msg.body().deserialize::<(bool,)>() {
                         let going_to_sleep = body.0;
