@@ -22,7 +22,6 @@ import { IdleStatus } from "../hooks/useIdleChecker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { StartTimerModal, TimeEntryTag, TaskInfo } from "./StartTimerModal";
 
 /** Tag on a task */
@@ -430,7 +429,7 @@ export function TimerControls({ status }: TimerControlsProps) {
         />
         {isSearching && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <div className="h-4 w-4 animate-spin border-2 border-muted-foreground border-t-transparent" />
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
           </div>
         )}
         {searchQuery && !isSearching && (
@@ -443,74 +442,74 @@ export function TimerControls({ status }: TimerControlsProps) {
             &times;
           </button>
         )}
+
+        {/* Search results dropdown - positioned absolutely to overlay content */}
+        {searchResults.length > 0 && (
+          <div className="absolute left-0 right-0 top-full mt-1 z-50 brutalist-border bg-card shadow-lg">
+            <div className="max-h-56 overflow-y-auto">
+              <div ref={resultsRef} className="divide-y divide-border">
+                {searchResults.map((task, index) => (
+                  <div
+                    key={task.id}
+                    className={`p-3 cursor-pointer transition-colors ${
+                      index === selectedIndex
+                        ? "bg-secondary border-l-2 border-l-primary"
+                        : "hover:bg-secondary/50"
+                    }`}
+                    onClick={(e) => handleTaskClick(task, e)}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{task.name}</span>
+                      {task.status_name && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[9px] px-1.5 py-0"
+                          style={{
+                            backgroundColor: task.status_color || undefined,
+                            color: task.status_color ? "#fff" : undefined,
+                          }}
+                        >
+                          {task.status_name.toUpperCase()}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {buildProjectPath(task) || task.custom_id || task.id}
+                    </p>
+                    {task.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {task.tags.map((tag) => (
+                          <span
+                            key={tag.name}
+                            className="inline-flex items-center px-1.5 py-0 text-[9px] font-medium uppercase tracking-wide"
+                            style={{
+                              backgroundColor: tag.tag_bg || "#555",
+                              color: "#fff",
+                            }}
+                          >
+                            {tag.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="px-3 py-1.5 brutalist-divider text-center bg-card">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                Enter to start &middot; Shift+click quick start
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Error display */}
       {error && (
         <div className="brutalist-border border-destructive bg-destructive/10 p-3">
           <p className="text-sm text-destructive font-mono-display">{error}</p>
-        </div>
-      )}
-
-      {/* Search results */}
-      {searchResults.length > 0 && (
-        <div className="brutalist-border">
-          <ScrollArea className="max-h-56">
-            <div ref={resultsRef} className="divide-y divide-border">
-              {searchResults.map((task, index) => (
-                <div
-                  key={task.id}
-                  className={`p-3 cursor-pointer transition-colors ${
-                    index === selectedIndex
-                      ? "bg-secondary border-l-2 border-l-primary"
-                      : "hover:bg-secondary/50"
-                  }`}
-                  onClick={(e) => handleTaskClick(task, e)}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm">{task.name}</span>
-                    {task.status_name && (
-                      <Badge
-                        variant="secondary"
-                        className="text-[9px] px-1.5 py-0"
-                        style={{
-                          backgroundColor: task.status_color || undefined,
-                          color: task.status_color ? "#fff" : undefined,
-                        }}
-                      >
-                        {task.status_name.toUpperCase()}
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                    {buildProjectPath(task) || task.custom_id || task.id}
-                  </p>
-                  {task.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {task.tags.map((tag) => (
-                        <span
-                          key={tag.name}
-                          className="inline-flex items-center px-1.5 py-0 text-[9px] font-medium uppercase tracking-wide"
-                          style={{
-                            backgroundColor: tag.tag_bg || "#555",
-                            color: "#fff",
-                          }}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-          <div className="px-3 py-1.5 brutalist-divider text-center">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
-              Enter to start &middot; Shift+click quick start
-            </p>
-          </div>
         </div>
       )}
 

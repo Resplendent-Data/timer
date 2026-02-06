@@ -222,11 +222,31 @@ pub async fn search_tasks(
         team_id
     );
 
+    // Build query parameters - include_closed ensures we search all statuses
+    // subtasks=true includes subtasks in results
+    let query_lower = query.to_lowercase();
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+    
+    // Use the first word with 2+ characters for API search to get broader results
+    // Short words like "a" can cause issues with ClickUp's search
+    let api_search_term = query_words
+        .iter()
+        .find(|w| w.len() >= 2)
+        .map(|s| *s)
+        .unwrap_or(&query_lower);
+    
     let response = client
         .get(&url)
         .header("Authorization", &api_key)
         .header("Content-Type", "application/json")
-        .query(&[("search", query), ("page", "0".to_string())])
+        .query(&[
+            ("search", api_search_term),
+            ("page", "0"),
+            ("order_by", "updated"),
+            ("reverse", "true"),
+            ("subtasks", "true"),
+            ("include_closed", "true"),
+        ])
         .send()
         .await
         .map_err(|e| format!("Failed to search tasks: {}", e))?;
@@ -242,8 +262,18 @@ pub async fn search_tasks(
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    // Convert API results to our richer TaskSearchResult type
-    let tasks: Vec<TaskSearchResult> = search_response.tasks.into_iter().map(|t| t.into()).collect();
+    // Filter client-side: check if ALL query words appear in task name (case-insensitive)
+    // This handles cases where API returns partial matches
+    let tasks: Vec<TaskSearchResult> = search_response
+        .tasks
+        .into_iter()
+        .map(|t| t.into())
+        .filter(|task: &TaskSearchResult| {
+            let name_lower = task.name.to_lowercase();
+            query_words.iter().all(|word| name_lower.contains(word))
+        })
+        .collect();
+    
     Ok(tasks)
 }
 

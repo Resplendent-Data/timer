@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { onAction } from "@tauri-apps/plugin-notification";
 import { checkNotificationPermission } from "./lib/notification";
 import { useIdleChecker } from "./hooks/useIdleChecker";
 import { useActivityHeartbeat } from "./hooks/useActivityHeartbeat";
@@ -60,6 +61,32 @@ function App() {
     checkNotificationPermission().catch((error) => {
       console.error("Failed to request notification permission:", error);
     });
+  }, []);
+
+  // Listen for notification clicks to show the main window (macOS/Windows)
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null;
+
+    const setup = async () => {
+      try {
+        const listener = await onAction(() => {
+          // Show the main window when notification is clicked
+          invoke("show_main_window").catch((error) => {
+            console.error("Failed to show main window on notification click:", error);
+          });
+        });
+        unlistenFn = () => listener.unregister();
+      } catch (error) {
+        // onAction may not be available on all platforms (e.g., Linux with notify-send)
+        console.debug("Notification action listener not available:", error);
+      }
+    };
+
+    setup();
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
   }, []);
 
   // Ensure the "rt" tag exists in ClickUp workspace on app startup
