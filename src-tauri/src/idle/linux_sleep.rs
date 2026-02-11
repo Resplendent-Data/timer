@@ -1,13 +1,15 @@
-//! Linux sleep/wake detection using systemd-logind D-Bus.
+//! Linux sleep/wake and shutdown detection using systemd-logind D-Bus.
 //!
-//! This module subscribes to systemd-logind's PrepareForSleep signal
-//! to detect when the system is about to sleep. This covers:
+//! This module subscribes to systemd-logind's PrepareForSleep and
+//! PrepareForShutdown signals to detect when the system is about to
+//! sleep or shut down. This covers:
 //! - Suspend (laptop lid close, manual suspend)
 //! - Hibernate
 //! - Hybrid sleep
+//! - Shutdown / reboot
 //!
-//! When sleep is detected, it emits a Tauri event to the frontend,
-//! matching the behavior of the macOS sleep detection module.
+//! When these events are detected, it emits Tauri events to the frontend,
+//! matching the behavior of the macOS detection module.
 
 use futures_util::StreamExt;
 use tauri::{AppHandle, Emitter};
@@ -16,11 +18,15 @@ use zbus::Connection;
 /// Event name emitted when the system is about to sleep (same as macOS).
 pub const SYSTEM_SLEEP_EVENT: &str = "system-sleep";
 
-/// Start observing Linux sleep events via systemd-logind D-Bus.
+/// Event name emitted when the system is about to shut down or reboot.
+pub const SYSTEM_SHUTDOWN_EVENT: &str = "system-shutdown";
+
+/// Start observing Linux sleep and shutdown events via systemd-logind D-Bus.
 ///
-/// Connects to the system bus and subscribes to the PrepareForSleep signal
-/// from org.freedesktop.login1.Manager. When the signal fires with `true`
-/// (about to sleep), emits a "system-sleep" event to the frontend.
+/// Connects to the system bus and subscribes to the PrepareForSleep and
+/// PrepareForShutdown signals from org.freedesktop.login1.Manager.
+/// - PrepareForSleep(true) emits `"system-sleep"` to the frontend
+/// - PrepareForShutdown(true) emits `"system-shutdown"` to the frontend
 ///
 /// # Arguments
 ///
@@ -44,7 +50,7 @@ pub async fn start_sleep_observer(app_handle: AppHandle) -> Result<(), String> {
     // Add match rule for PrepareForSleep signal from logind
     // Signal: org.freedesktop.login1.Manager.PrepareForSleep(bool)
     // true = about to sleep, false = waking up
-    let match_rule = "type='signal',\
+    let sleep_match_rule = "type='signal',\
 sender='org.freedesktop.login1',\
 interface='org.freedesktop.login1.Manager',\
 member='PrepareForSleep'";
@@ -55,10 +61,29 @@ member='PrepareForSleep'";
             "/org/freedesktop/DBus",
             Some("org.freedesktop.DBus"),
             "AddMatch",
-            &(match_rule,),
+            &(sleep_match_rule,),
         )
         .await
-        .map_err(|e| format!("Failed to add signal match rule: {}", e))?;
+        .map_err(|e| format!("Failed to add sleep signal match rule: {}", e))?;
+
+    // Add match rule for PrepareForShutdown signal from logind
+    // Signal: org.freedesktop.login1.Manager.PrepareForShutdown(bool)
+    // true = about to shut down, false = shutdown cancelled
+    let shutdown_match_rule = "type='signal',\
+sender='org.freedesktop.login1',\
+interface='org.freedesktop.login1.Manager',\
+member='PrepareForShutdown'";
+
+    connection
+        .call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "AddMatch",
+            &(shutdown_match_rule,),
+        )
+        .await
+        .map_err(|e| format!("Failed to add shutdown signal match rule: {}", e))?;
 
     // Spawn background task to listen for signals
     tokio::spawn(async move {
@@ -66,35 +91,48 @@ member='PrepareForSleep'";
 
         while let Some(msg_result) = stream.next().await {
             if let Ok(msg) = msg_result {
-                // Check if this is the PrepareForSleep signal
                 // In zbus 5.x, we need to get the header to access member name
-                let is_prepare_for_sleep = msg
+                let member_name = msg
                     .header()
                     .member()
-                    .map(|m| m.as_str() == "PrepareForSleep")
-                    .unwrap_or(false);
+                    .map(|m| m.as_str().to_string());
 
-                if is_prepare_for_sleep {
-                    // Deserialize the boolean argument
-                    if let Ok(body) = msg.body().deserialize::<(bool,)>() {
-                        let going_to_sleep = body.0;
-                        if going_to_sleep {
-                            println!(
-                                "[resplendent] Linux system preparing for sleep - emitting system-sleep event"
-                            );
-                            if let Err(e) = app_handle.emit(SYSTEM_SLEEP_EVENT, ()) {
-                                eprintln!("[resplendent] Failed to emit system-sleep event: {}", e);
+                match member_name.as_deref() {
+                    Some("PrepareForSleep") => {
+                        if let Ok(body) = msg.body().deserialize::<(bool,)>() {
+                            if body.0 {
+                                println!(
+                                    "[resplendent] Linux system preparing for sleep - emitting system-sleep event"
+                                );
+                                if let Err(e) = app_handle.emit(SYSTEM_SLEEP_EVENT, ()) {
+                                    eprintln!("[resplendent] Failed to emit system-sleep event: {}", e);
+                                }
+                            } else {
+                                println!("[resplendent] Linux system waking from sleep");
                             }
-                        } else {
-                            println!("[resplendent] Linux system waking from sleep");
                         }
                     }
+                    Some("PrepareForShutdown") => {
+                        if let Ok(body) = msg.body().deserialize::<(bool,)>() {
+                            if body.0 {
+                                println!(
+                                    "[resplendent] Linux system preparing for shutdown - emitting system-shutdown event"
+                                );
+                                if let Err(e) = app_handle.emit(SYSTEM_SHUTDOWN_EVENT, ()) {
+                                    eprintln!("[resplendent] Failed to emit system-shutdown event: {}", e);
+                                }
+                            } else {
+                                println!("[resplendent] Linux system shutdown cancelled");
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
     });
 
-    println!("[resplendent] Linux sleep observer started successfully");
+    println!("[resplendent] Linux sleep/shutdown observer started successfully");
     Ok(())
 }
 
@@ -106,5 +144,10 @@ mod tests {
     fn test_event_name_matches_macos() {
         // Ensure the event name is consistent with macOS
         assert_eq!(SYSTEM_SLEEP_EVENT, "system-sleep");
+    }
+
+    #[test]
+    fn test_shutdown_event_name_matches_macos() {
+        assert_eq!(SYSTEM_SHUTDOWN_EVENT, "system-shutdown");
     }
 }

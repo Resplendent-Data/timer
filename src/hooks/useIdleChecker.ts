@@ -10,6 +10,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit, UnlistenFn } from "@tauri-apps/api/event";
+import { exit } from "@tauri-apps/plugin-process";
 import { sendNotification } from "../lib/notification";
 import { getSettings, addRecentTask } from "../lib/store";
 
@@ -387,64 +388,97 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
 
     // Listen for system sleep events (macOS lid close / display sleep)
     let unlistenSleep: UnlistenFn | null = null;
+    let unlistenShutdown: UnlistenFn | null = null;
+    let unlistenQuit: UnlistenFn | null = null;
+
+    /**
+     * Stop any running timer and update UI state.
+     * Shared logic for sleep, shutdown, and app quit events.
+     */
+    const stopTimerForEvent = async (reason: string): Promise<boolean> => {
+      const settings = await getSettings();
+      if (!settings?.clickupApiKey || !settings?.clickupTeamId) return false;
+
+      const timerInfo = await invoke<RunningTimerInfo | null>(
+        "get_running_timer_info",
+        {
+          apiKey: settings.clickupApiKey,
+          teamId: settings.clickupTeamId,
+        }
+      );
+
+      if (timerInfo) {
+        await invoke("stop_timer", {
+          apiKey: settings.clickupApiKey,
+          teamId: settings.clickupTeamId,
+        });
+
+        await sendNotification({
+          title: "Timer Stopped",
+          body: `Timer stopped on "${timerInfo.name}" because ${reason}`,
+        });
+
+        setStatus((prev) => ({
+          ...prev,
+          lastStoppedAt: new Date(),
+          lastStoppedTaskName: timerInfo.name,
+          lastStoppedTaskId: timerInfo.task_id,
+          runningTimerId: null,
+          runningTaskName: null,
+          runningTaskId: null,
+          runningTaskStartMs: null,
+          runningTimerIsManual: false,
+          runningTimerDescription: null,
+          runningTimerTags: [],
+          runningTimerBillable: false,
+        }));
+
+        await updateTrayDisplay(null, null);
+        await emitWidgetUpdate(null, null);
+        return true;
+      }
+      return false;
+    };
 
     const setupSleepListener = async () => {
       unlistenSleep = await listen("system-sleep", async () => {
         console.log("[useIdleChecker] System sleep detected, stopping timer");
         try {
-          const settings = await getSettings();
-          if (settings?.clickupApiKey && settings?.clickupTeamId) {
-            // Get the current timer info before stopping
-            const timerInfo = await invoke<RunningTimerInfo | null>(
-              "get_running_timer_info",
-              {
-                apiKey: settings.clickupApiKey,
-                teamId: settings.clickupTeamId,
-              }
-            );
-
-            if (timerInfo) {
-              // Stop the timer
-              await invoke("stop_timer", {
-                apiKey: settings.clickupApiKey,
-                teamId: settings.clickupTeamId,
-              });
-
-              // Show notification
-              await sendNotification({
-                title: "Timer Stopped",
-                body: `Timer stopped on "${timerInfo.name}" because your Mac went to sleep`,
-              });
-
-              // Update status
-              setStatus((prev) => ({
-                ...prev,
-                lastStoppedAt: new Date(),
-                lastStoppedTaskName: timerInfo.name,
-                lastStoppedTaskId: timerInfo.task_id,
-                runningTimerId: null,
-                runningTaskName: null,
-                runningTaskId: null,
-                runningTaskStartMs: null,
-                runningTimerIsManual: false,
-                runningTimerDescription: null,
-                runningTimerTags: [],
-                runningTimerBillable: false,
-              }));
-
-              // Update tray display
-              await updateTrayDisplay(null, null);
-              // Update widget
-              await emitWidgetUpdate(null, null);
-            }
-          }
+          await stopTimerForEvent("your computer went to sleep");
         } catch (error) {
           console.error("[useIdleChecker] Failed to stop timer on sleep:", error);
         }
       });
     };
 
+    const setupShutdownListener = async () => {
+      unlistenShutdown = await listen("system-shutdown", async () => {
+        console.log("[useIdleChecker] System shutdown detected, stopping timer");
+        try {
+          await stopTimerForEvent("your computer is shutting down");
+        } catch (error) {
+          console.error("[useIdleChecker] Failed to stop timer on shutdown:", error);
+        }
+      });
+    };
+
+    const setupQuitListener = async () => {
+      unlistenQuit = await listen("app-quit-requested", async () => {
+        console.log("[useIdleChecker] App quit requested, stopping timer before exit");
+        try {
+          await stopTimerForEvent("the app is closing");
+        } catch (error) {
+          console.error("[useIdleChecker] Failed to stop timer on quit:", error);
+        } finally {
+          // Always exit the app, even if timer stop failed
+          await exit(0);
+        }
+      });
+    };
+
     setupSleepListener();
+    setupShutdownListener();
+    setupQuitListener();
 
     return () => {
       if (intervalRef.current) {
@@ -453,6 +487,12 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
       }
       if (unlistenSleep) {
         unlistenSleep();
+      }
+      if (unlistenShutdown) {
+        unlistenShutdown();
+      }
+      if (unlistenQuit) {
+        unlistenQuit();
       }
       setStatus((prev) => ({ ...prev, isRunning: false }));
     };

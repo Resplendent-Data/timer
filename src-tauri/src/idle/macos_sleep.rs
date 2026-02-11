@@ -1,12 +1,14 @@
-//! macOS sleep/wake detection using NSWorkspace notifications.
+//! macOS sleep/wake and shutdown detection using NSWorkspace notifications.
 //!
 //! This module subscribes to macOS power events to detect when the system
-//! or display goes to sleep (lid close, display sleep, system sleep).
-//! When sleep is detected, it emits a Tauri event to the frontend.
+//! or display goes to sleep (lid close, display sleep, system sleep) and
+//! when the system is about to shut down, restart, or log out.
+//! When these events are detected, it emits Tauri events to the frontend.
 
 use block2::RcBlock;
 use objc2_app_kit::{
-    NSWorkspace, NSWorkspaceScreensDidSleepNotification, NSWorkspaceWillSleepNotification,
+    NSWorkspace, NSWorkspaceScreensDidSleepNotification, NSWorkspaceWillPowerOffNotification,
+    NSWorkspaceWillSleepNotification,
 };
 use objc2_foundation::NSNotification;
 use std::ptr::NonNull;
@@ -15,14 +17,18 @@ use tauri::{AppHandle, Emitter};
 /// Event name emitted when the system is about to sleep.
 pub const SYSTEM_SLEEP_EVENT: &str = "system-sleep";
 
-/// Start observing macOS sleep notifications.
+/// Event name emitted when the system is about to shut down, restart, or log out.
+pub const SYSTEM_SHUTDOWN_EVENT: &str = "system-shutdown";
+
+/// Start observing macOS sleep and shutdown notifications.
 ///
 /// This function subscribes to:
 /// - `NSWorkspaceScreensDidSleepNotification`: Fires when displays sleep (includes lid close)
 /// - `NSWorkspaceWillSleepNotification`: Fires when the system is about to sleep
+/// - `NSWorkspaceWillPowerOffNotification`: Fires when the system is about to shut down, restart, or log out
 ///
-/// When either notification is received, a `"system-sleep"` event is emitted
-/// to the Tauri frontend.
+/// Sleep notifications emit `"system-sleep"`, and shutdown notifications emit
+/// `"system-shutdown"` to the Tauri frontend.
 ///
 /// # Arguments
 ///
@@ -46,7 +52,8 @@ pub fn start_sleep_observer(app_handle: AppHandle) -> Result<(), String> {
 
     // Clone app_handle for each closure
     let app_handle_screens = app_handle.clone();
-    let app_handle_system = app_handle;
+    let app_handle_system = app_handle.clone();
+    let app_handle_shutdown = app_handle;
 
     // Create block for screen sleep (lid close, display sleep)
     let screen_sleep_block = RcBlock::new(move |_notification: NonNull<NSNotification>| {
@@ -84,12 +91,31 @@ pub fn start_sleep_observer(app_handle: AppHandle) -> Result<(), String> {
         )
     };
 
+    // Create block for system shutdown/restart/logout
+    let shutdown_block = RcBlock::new(move |_notification: NonNull<NSNotification>| {
+        println!("[resplendent] macOS system will power off - emitting system-shutdown event");
+        if let Err(e) = app_handle_shutdown.emit(SYSTEM_SHUTDOWN_EVENT, ()) {
+            eprintln!("[resplendent] Failed to emit system-shutdown event: {}", e);
+        }
+    });
+
+    // Subscribe to power off notification (shutdown, restart, logout)
+    let shutdown_observer = unsafe {
+        notification_center.addObserverForName_object_queue_usingBlock(
+            Some(NSWorkspaceWillPowerOffNotification),
+            None,
+            None,
+            &shutdown_block,
+        )
+    };
+
     // Leak the observers to keep them alive for the app lifetime.
     // This is intentional - we want these observers to persist.
     std::mem::forget(screen_observer);
     std::mem::forget(system_observer);
+    std::mem::forget(shutdown_observer);
 
-    println!("[resplendent] macOS sleep observer started successfully");
+    println!("[resplendent] macOS sleep/shutdown observer started successfully");
     Ok(())
 }
 
@@ -101,5 +127,10 @@ mod tests {
     #[test]
     fn test_event_name() {
         assert_eq!(super::SYSTEM_SLEEP_EVENT, "system-sleep");
+    }
+
+    #[test]
+    fn test_shutdown_event_name() {
+        assert_eq!(super::SYSTEM_SHUTDOWN_EVENT, "system-shutdown");
     }
 }

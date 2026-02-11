@@ -431,7 +431,14 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
-                        app.exit(0);
+                        // Emit event so the frontend can stop any running timer before quitting
+                        let _ = app.emit("app-quit-requested", ());
+                        // Fallback: force quit after 5 seconds in case frontend is unresponsive
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            handle.exit(0);
+                        });
                     }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
