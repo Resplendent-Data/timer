@@ -5,6 +5,7 @@
 
 use crate::{idle_monitor, stats};
 use serde::{Deserialize, Serialize};
+use std::sync::{Mutex, OnceLock};
 
 /// Result of checking idle status and potentially stopping a timer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +72,14 @@ struct RunningTimeEntry {
     billable: bool,
 }
 
+/// Snapshot of the last running timer observed by the app.
+#[derive(Debug, Clone)]
+struct TrackedSession {
+    team_id: String,
+    timer_id: String,
+    start_time_ms: i64,
+}
+
 /// A ClickUp task reference
 #[derive(Debug, Deserialize)]
 struct Task {
@@ -111,6 +120,122 @@ impl RunningTimeEntry {
     }
 }
 
+fn tracked_session_store() -> &'static Mutex<Option<TrackedSession>> {
+    static TRACKED_SESSION: OnceLock<Mutex<Option<TrackedSession>>> = OnceLock::new();
+    TRACKED_SESSION.get_or_init(|| Mutex::new(None))
+}
+
+/// Track the currently running timer and detect if a previous timer disappeared.
+fn track_running_session(team_id: &str, timer_id: &str, start_time_ms: i64) -> Option<i64> {
+    let Ok(mut guard) = tracked_session_store().lock() else {
+        return None;
+    };
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let previous = guard.take();
+    let mut external_stop_duration: Option<i64> = None;
+
+    if let Some(prev) = previous {
+        let is_same_timer = prev.team_id == team_id && prev.timer_id == timer_id;
+        if is_same_timer {
+            *guard = Some(prev);
+            return None;
+        }
+
+        if prev.team_id == team_id {
+            external_stop_duration = Some(calculate_elapsed_secs(prev.start_time_ms, now_ms));
+        }
+    }
+
+    *guard = Some(TrackedSession {
+        team_id: team_id.to_string(),
+        timer_id: timer_id.to_string(),
+        start_time_ms,
+    });
+
+    external_stop_duration.filter(|duration| *duration > 0)
+}
+
+/// Detect when a tracked timer disappears and return the inferred session duration.
+fn capture_external_stop_for_team(team_id: &str) -> Option<i64> {
+    let Ok(mut guard) = tracked_session_store().lock() else {
+        return None;
+    };
+
+    let Some(prev) = guard.as_ref() else {
+        return None;
+    };
+
+    if prev.team_id != team_id {
+        return None;
+    }
+
+    let prev = guard.take()?;
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let duration = calculate_elapsed_secs(prev.start_time_ms, now_ms);
+    (duration > 0).then_some(duration)
+}
+
+/// Clear tracked session state for team after app-initiated stop.
+fn clear_tracked_session_for_team(team_id: &str) {
+    let Ok(mut guard) = tracked_session_store().lock() else {
+        return;
+    };
+
+    if guard
+        .as_ref()
+        .map(|session| session.team_id == team_id)
+        .unwrap_or(false)
+    {
+        *guard = None;
+    }
+}
+
+/// Calculate elapsed seconds between start and now (both in ms).
+fn calculate_elapsed_secs(start_ms: i64, now_ms: i64) -> i64 {
+    ((now_ms - start_ms) / 1000).max(0)
+}
+
+/// Calculate current session duration in seconds for a running entry.
+fn session_duration_secs(entry: &RunningTimeEntry) -> i64 {
+    entry
+        .start_time_ms()
+        .map(|start_ms| calculate_elapsed_secs(start_ms, chrono::Utc::now().timestamp_millis()))
+        .unwrap_or(0)
+}
+
+/// Fetch the current running time entry for a team.
+async fn fetch_running_time_entry(
+    client: &reqwest::Client,
+    api_key: &str,
+    team_id: &str,
+) -> Result<Option<RunningTimeEntry>, String> {
+    let current_url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/current",
+        team_id
+    );
+
+    let response = client
+        .get(&current_url)
+        .header("Authorization", api_key)
+        .header("Content-Type", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch running timer: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("ClickUp API error ({}): {}", status, body));
+    }
+
+    let running_response: RunningTimeEntryResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse running timer response: {}", e))?;
+
+    Ok(running_response.data)
+}
 
 /// A tag on a ClickUp task
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,7 +323,9 @@ impl From<TaskSearchApiResult> for TaskSearchResult {
             status_name: api.status.as_ref().map(|s| s.status.clone()),
             status_color: api.status.and_then(|s| s.color),
             list_name: api.list.map(|l| l.name),
-            folder_name: api.folder.and_then(|f| if f.hidden { None } else { Some(f.name) }),
+            folder_name: api
+                .folder
+                .and_then(|f| if f.hidden { None } else { Some(f.name) }),
             space_name: api.space.and_then(|s| s.name),
             tags: api.tags,
         }
@@ -217,16 +344,13 @@ pub async fn search_tasks(
     query: String,
 ) -> Result<Vec<TaskSearchResult>, String> {
     let client = reqwest::Client::new();
-    let url = format!(
-        "https://api.clickup.com/api/v2/team/{}/task",
-        team_id
-    );
+    let url = format!("https://api.clickup.com/api/v2/team/{}/task", team_id);
 
     // Build query parameters - include_closed ensures we search all statuses
     // subtasks=true includes subtasks in results
     let query_lower = query.to_lowercase();
     let query_words: Vec<&str> = query_lower.split_whitespace().collect();
-    
+
     // Use the first word with 2+ characters for API search to get broader results
     // Short words like "a" can cause issues with ClickUp's search
     let api_search_term = query_words
@@ -234,7 +358,7 @@ pub async fn search_tasks(
         .find(|w| w.len() >= 2)
         .map(|s| *s)
         .unwrap_or(&query_lower);
-    
+
     let response = client
         .get(&url)
         .header("Authorization", &api_key)
@@ -273,7 +397,7 @@ pub async fn search_tasks(
             query_words.iter().all(|word| name_lower.contains(word))
         })
         .collect();
-    
+
     Ok(tasks)
 }
 
@@ -336,7 +460,7 @@ pub const RT_TAG_NAME: &str = "rt";
 pub async fn ensure_rt_tag_exists(api_key: String, team_id: String) -> Result<bool, String> {
     // First check if the tag already exists
     let existing_tags = get_time_entry_tags(api_key.clone(), team_id.clone()).await?;
-    
+
     if existing_tags.iter().any(|t| t.name == RT_TAG_NAME) {
         return Ok(false); // Tag already exists
     }
@@ -368,7 +492,10 @@ pub async fn ensure_rt_tag_exists(api_key: String, team_id: String) -> Result<bo
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("ClickUp API error creating rt tag ({}): {}", status, body));
+        return Err(format!(
+            "ClickUp API error creating rt tag ({}): {}",
+            status, body
+        ));
     }
 
     Ok(true)
@@ -430,7 +557,10 @@ pub async fn add_rt_tag_to_time_entry(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("ClickUp API error adding rt tag ({}): {}", status, body));
+        return Err(format!(
+            "ClickUp API error adding rt tag ({}): {}",
+            status, body
+        ));
     }
 
     Ok(true)
@@ -445,20 +575,23 @@ fn build_tag_objects_with_rt(tags: Option<Vec<String>>) -> Vec<serde_json::Value
     if !result.iter().any(|t| t == RT_TAG_NAME) {
         result.push(RT_TAG_NAME.to_string());
     }
-    
-    result.into_iter().map(|name| {
-        if name == RT_TAG_NAME {
-            // Use distinctive purple color for rt tag
-            serde_json::json!({
-                "name": RT_TAG_NAME,
-                "tag_bg": "#7b68ee",
-                "tag_fg": "#ffffff"
-            })
-        } else {
-            // For other tags, just use name (ClickUp will use existing tag's colors)
-            serde_json::json!({"name": name})
-        }
-    }).collect()
+
+    result
+        .into_iter()
+        .map(|name| {
+            if name == RT_TAG_NAME {
+                // Use distinctive purple color for rt tag
+                serde_json::json!({
+                    "name": RT_TAG_NAME,
+                    "tag_bg": "#7b68ee",
+                    "tag_fg": "#ffffff"
+                })
+            } else {
+                // For other tags, just use name (ClickUp will use existing tag's colors)
+                serde_json::json!({"name": name})
+            }
+        })
+        .collect()
 }
 
 /// Start a time entry for a specific task.
@@ -514,6 +647,16 @@ pub async fn start_timer(
 /// Stop the currently running timer.
 pub async fn stop_timer(api_key: String, team_id: String) -> Result<(), String> {
     let client = reqwest::Client::new();
+
+    // Best-effort pre-fetch so manual stops also count toward session stats.
+    let session_duration = fetch_running_time_entry(&client, &api_key, &team_id)
+        .await
+        .ok()
+        .flatten()
+        .filter(|entry| entry.is_running())
+        .map(|entry| session_duration_secs(&entry))
+        .unwrap_or(0);
+
     let url = format!(
         "https://api.clickup.com/api/v2/team/{}/time_entries/stop",
         team_id
@@ -532,6 +675,12 @@ pub async fn stop_timer(api_key: String, team_id: String) -> Result<(), String> 
         let body = response.text().await.unwrap_or_default();
         return Err(format!("ClickUp API error ({}): {}", status, body));
     }
+
+    if session_duration > 0 {
+        stats::record_timer_session(session_duration);
+    }
+
+    clear_tracked_session_for_team(&team_id);
 
     Ok(())
 }
@@ -623,47 +772,15 @@ pub async fn check_and_stop_timer_impl(
         });
     }
 
-    // User is idle, check for running timer using the dedicated endpoint
+    // User is idle, check for running timer using the dedicated endpoint.
     let client = reqwest::Client::new();
-
-    // Use the dedicated "current" endpoint to get the running timer
-    let current_url = format!(
-        "https://api.clickup.com/api/v2/team/{}/time_entries/current",
-        team_id
-    );
-
-    let response = client
-        .get(&current_url)
-        .header("Authorization", &api_key)
-        .header("Content-Type", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch running timer: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("ClickUp API error ({}): {}", status, body));
-    }
-
-    let running_response: RunningTimeEntryResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse ClickUp response: {}", e))?;
-
-    // Check if there's a running timer (data exists and duration is negative)
-    if let Some(entry) = running_response.data {
+    let running_entry = fetch_running_time_entry(&client, &api_key, &team_id).await?;
+    // Check if there's a running timer.
+    if let Some(entry) = running_entry {
         if entry.is_running() {
             let task_name = entry.display_name();
             let task_id = entry.task_id();
-            
-            // Calculate session duration from start time
-            let session_duration_secs = entry.start_time_ms()
-                .map(|start_ms| {
-                    let now_ms = chrono::Utc::now().timestamp_millis();
-                    ((now_ms - start_ms) / 1000).max(0)
-                })
-                .unwrap_or(0);
+            let session_duration_secs = session_duration_secs(&entry);
 
             // Stop the running timer
             let stop_url = format!(
@@ -682,7 +799,14 @@ pub async fn check_and_stop_timer_impl(
             if !stop_response.status().is_success() {
                 let status = stop_response.status();
                 let body = stop_response.text().await.unwrap_or_default();
-                stats::record_idle_event(now, idle_secs as i64, false, Some(task_name.clone()), task_id.clone(), 0);
+                stats::record_idle_event(
+                    now,
+                    idle_secs as i64,
+                    false,
+                    Some(task_name.clone()),
+                    task_id.clone(),
+                    0,
+                );
                 return Ok(IdleCheckResult {
                     stopped: false,
                     task_name: Some(task_name),
@@ -693,9 +817,17 @@ pub async fn check_and_stop_timer_impl(
             }
 
             // Record the successful timer stop with session duration
-            stats::record_idle_event(now, idle_secs as i64, true, Some(task_name.clone()), task_id.clone(), session_duration_secs);
+            stats::record_idle_event(
+                now,
+                idle_secs as i64,
+                true,
+                Some(task_name.clone()),
+                task_id.clone(),
+                session_duration_secs,
+            );
             stats::record_timer_session(session_duration_secs);
-            
+            clear_tracked_session_for_team(&team_id);
+
             return Ok(IdleCheckResult {
                 stopped: true,
                 task_name: Some(task_name),
@@ -706,8 +838,7 @@ pub async fn check_and_stop_timer_impl(
         }
     }
 
-    // No running timer found - record that we went idle but no timer was active
-    stats::record_idle_event(now, idle_secs as i64, false, None, None, 0);
+    // No running timer found, nothing to stop.
     Ok(IdleCheckResult {
         stopped: false,
         task_name: None,
@@ -731,34 +862,10 @@ pub async fn check_and_stop_timer_impl(
 /// The name of the currently running task, or None if no timer is running.
 pub async fn get_running_timer(api_key: String, team_id: String) -> Result<Option<String>, String> {
     let client = reqwest::Client::new();
-
-    // Use the dedicated "current" endpoint
-    let current_url = format!(
-        "https://api.clickup.com/api/v2/team/{}/time_entries/current",
-        team_id
-    );
-
-    let response = client
-        .get(&current_url)
-        .header("Authorization", &api_key)
-        .header("Content-Type", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch running timer: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("ClickUp API error ({}): {}", status, body));
-    }
-
-    let running_response: RunningTimeEntryResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let running_entry = fetch_running_time_entry(&client, &api_key, &team_id).await?;
 
     // Check if there's a running timer (data exists and duration is negative)
-    let running = running_response.data.and_then(|entry| {
+    let running = running_entry.and_then(|entry| {
         if entry.is_running() {
             Some(entry.display_name())
         } else {
@@ -784,32 +891,9 @@ pub async fn get_running_timer_info(
     team_id: String,
 ) -> Result<Option<RunningTimerInfo>, String> {
     let client = reqwest::Client::new();
+    let running_entry = fetch_running_time_entry(&client, &api_key, &team_id).await?;
 
-    let current_url = format!(
-        "https://api.clickup.com/api/v2/team/{}/time_entries/current",
-        team_id
-    );
-
-    let response = client
-        .get(&current_url)
-        .header("Authorization", &api_key)
-        .header("Content-Type", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch running timer: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("ClickUp API error ({}): {}", status, body));
-    }
-
-    let running_response: RunningTimeEntryResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-    let info = running_response.data.and_then(|entry| {
+    let info = running_entry.and_then(|entry| {
         if entry.is_running() {
             let id = entry.id.clone();
             let is_manual = entry.task.is_none();
@@ -832,6 +916,18 @@ pub async fn get_running_timer_info(
             None
         }
     });
+
+    if let Some(timer) = &info {
+        if timer.start_time_ms > 0 {
+            if let Some(duration_secs) =
+                track_running_session(&team_id, &timer.id, timer.start_time_ms)
+            {
+                stats::record_timer_session(duration_secs);
+            }
+        }
+    } else if let Some(duration_secs) = capture_external_stop_for_team(&team_id) {
+        stats::record_timer_session(duration_secs);
+    }
 
     Ok(info)
 }
@@ -882,5 +978,11 @@ mod tests {
         assert!(json.contains("\"task_name\":\"Test Task\""));
         assert!(json.contains("\"task_id\":\"abc123\""));
         assert!(json.contains("\"idle_duration\":600"));
+    }
+
+    #[test]
+    fn test_calculate_elapsed_secs_non_negative() {
+        assert_eq!(calculate_elapsed_secs(1_000, 5_000), 4);
+        assert_eq!(calculate_elapsed_secs(5_000, 1_000), 0);
     }
 }

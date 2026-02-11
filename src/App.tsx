@@ -232,7 +232,7 @@ function App() {
             </TabsContent>
 
             <TabsContent value="stats" className="mt-0 flex-1">
-              <Stats />
+              <Stats status={idleStatus} />
             </TabsContent>
 
             <TabsContent value="settings" className="mt-0 flex-1">

@@ -1,3 +1,4 @@
+import { PauseCircle, ShieldCheck, TimerOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface IdleEvent {
@@ -37,39 +38,58 @@ function formatDuration(secs: number): string {
 }
 
 export function IdleHistory({ events }: IdleHistoryProps) {
+  const timerStops = events.filter((event) => event.timer_stopped).length;
+  const totalIdleSeconds = events.reduce(
+    (sum, event) => sum + event.duration_secs,
+    0
+  );
+
   if (events.length === 0) {
     return (
-      <div className="text-center py-6 text-muted-foreground">
-        <p className="text-xs uppercase tracking-wider">No idle events yet</p>
-        <p className="text-[10px] mt-1">Keep focused</p>
+      <div className="py-6 text-center text-muted-foreground">
+        <p className="text-xs uppercase tracking-wider">No interruptions yet</p>
+        <p className="mt-1 text-[10px]">Nice focus streak</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
-      <p className="brutalist-label">Recent Idle Events</p>
-      <div className="space-y-1 max-h-40 overflow-y-auto">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="brutalist-label">Interruption Feed</p>
+        <div className="flex gap-2 text-[10px] font-mono-display text-muted-foreground">
+          <span className="brutalist-border bg-background/60 px-1.5 py-0.5">
+            {timerStops} timers protected
+          </span>
+          <span className="brutalist-border bg-background/60 px-1.5 py-0.5">
+            {formatDuration(totalIdleSeconds)} idle
+          </span>
+        </div>
+      </div>
+
+      <div className="max-h-44 space-y-1.5 overflow-y-auto">
         {events.map((event) => (
           <div
             key={event.id}
             className={cn(
-              "flex items-center justify-between py-2 px-3 text-sm",
+              "flex items-center justify-between px-3 py-2 text-sm brutalist-border",
               event.timer_stopped
-                ? "bg-primary/10 border-l-2 border-l-primary"
-                : "bg-muted/30"
+                ? "bg-primary/10 border-primary/40"
+                : "bg-muted/30 border-border"
             )}
           >
             <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "w-1.5 h-1.5",
-                  event.timer_stopped ? "bg-primary" : "bg-muted-foreground"
-                )}
-              />
+              {event.timer_stopped ? (
+                <ShieldCheck className="h-4 w-4 text-primary" />
+              ) : event.task_name ? (
+                <TimerOff className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <PauseCircle className="h-4 w-4 text-muted-foreground" />
+              )}
               <div>
                 <p className="text-foreground text-sm">
-                  {event.task_name || (event.timer_stopped ? "Timer stopped" : "Went idle")}
+                  {event.task_name ||
+                    (event.timer_stopped ? "Timer auto-stopped" : "Went idle")}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {formatRelativeTime(event.started_at)}
@@ -81,7 +101,7 @@ export function IdleHistory({ events }: IdleHistoryProps) {
                 </p>
               </div>
             </div>
-            <span className="text-muted-foreground text-xs font-mono-display">
+            <span className="text-xs font-mono-display text-muted-foreground">
               {formatDuration(event.duration_secs)} idle
             </span>
           </div>

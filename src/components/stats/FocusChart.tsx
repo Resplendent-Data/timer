@@ -13,13 +13,18 @@ interface FocusChartProps {
   data: DailyActivity[];
 }
 
+function parseDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function formatDay(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseDate(dateStr);
   return date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
 }
 
 function formatFullDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseDate(dateStr);
   return date.toLocaleDateString("en-US", { 
     weekday: "short", 
     month: "short", 
@@ -41,20 +46,54 @@ export function FocusChart({ data }: FocusChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   
   const sortedData = [...data].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    (a, b) => parseDate(a.date).getTime() - parseDate(b.date).getTime()
   );
 
-  // Max should be at least 1 hour for visual purposes
-  const maxSeconds = Math.max(...sortedData.map((d) => d.active_seconds), 3600);
+  const maxTotalSeconds = Math.max(
+    ...sortedData.map((d) => d.active_seconds + d.idle_seconds),
+    3600
+  );
 
   const hoveredDay = hoveredIndex !== null ? sortedData[hoveredIndex] : null;
+  const weekActiveSeconds = sortedData.reduce(
+    (sum, day) => sum + day.active_seconds,
+    0
+  );
+  const weekTrackedSeconds = sortedData.reduce(
+    (sum, day) => sum + day.session_seconds,
+    0
+  );
+  const bestDay = sortedData.reduce<DailyActivity | null>((best, day) => {
+    if (!best || day.active_seconds > best.active_seconds) return day;
+    return best;
+  }, null);
+  const today = new Date().toDateString();
 
   return (
-    <div className="space-y-2">
-      <p className="brutalist-label">Last 7 Days</p>
-      
-      {/* Tooltip */}
-      <div className="h-16 flex items-center justify-center">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="brutalist-label">7-Day Activity Radar</p>
+        <p className="text-xs text-muted-foreground">
+          {formatDuration(weekActiveSeconds)} active
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="brutalist-border bg-background/60 px-2 py-1.5">
+          <p className="text-muted-foreground">Tracked Sessions</p>
+          <p className="font-mono-display font-semibold">
+            {formatDuration(weekTrackedSeconds)}
+          </p>
+        </div>
+        <div className="brutalist-border bg-background/60 px-2 py-1.5">
+          <p className="text-muted-foreground">Best Day</p>
+          <p className="font-mono-display font-semibold">
+            {bestDay ? formatDay(bestDay.date) : "--"}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex h-16 items-center justify-center brutalist-border bg-background/40">
         {hoveredDay ? (
           <div className="text-center space-y-1 animate-in fade-in duration-150">
             <p className="text-xs font-medium text-foreground">
@@ -62,21 +101,23 @@ export function FocusChart({ data }: FocusChartProps) {
             </p>
             <div className="flex items-center justify-center gap-3 text-[11px]">
               <span>
-                <span className="text-primary font-semibold font-mono-display">
+                <span className="font-mono-display font-semibold text-primary">
                   {formatDuration(hoveredDay.active_seconds)}
                 </span>
                 <span className="text-muted-foreground ml-1">active</span>
               </span>
               <span className="text-muted-foreground">·</span>
               <span>
-                <span className="text-muted-foreground font-mono-display">
+                <span className="font-mono-display text-muted-foreground">
                   {formatDuration(hoveredDay.idle_seconds)}
                 </span>
                 <span className="text-muted-foreground ml-1">idle</span>
               </span>
             </div>
-            <p className="text-[10px] text-muted-foreground">
-              {hoveredDay.session_count} session{hoveredDay.session_count !== 1 ? "s" : ""}
+            <p className="text-[10px] text-muted-foreground font-mono-display">
+              {formatDuration(hoveredDay.session_seconds)} tracked ·{" "}
+              {hoveredDay.session_count} session
+              {hoveredDay.session_count !== 1 ? "s" : ""}
             </p>
           </div>
         ) : (
@@ -86,37 +127,58 @@ export function FocusChart({ data }: FocusChartProps) {
         )}
       </div>
 
-      {/* Chart Bars */}
-      <div className="flex items-end justify-between gap-1 h-20">
+      <div className="flex h-24 items-end justify-between gap-1.5">
         {sortedData.map((day, index) => {
-          const heightPercent = (day.active_seconds / maxSeconds) * 100;
-          const isToday =
-            new Date(day.date).toDateString() === new Date().toDateString();
+          const totalSeconds = day.active_seconds + day.idle_seconds;
+          const dayHeightPercent = (totalSeconds / maxTotalSeconds) * 100;
+          const activeRatio = totalSeconds > 0 ? day.active_seconds / totalSeconds : 0;
+          const activeHeightPercent = dayHeightPercent * activeRatio;
+          const idleHeightPercent = dayHeightPercent - activeHeightPercent;
+          const isToday = parseDate(day.date).toDateString() === today;
           const isHovered = hoveredIndex === index;
 
           return (
             <div
               key={day.date}
-              className="flex-1 flex flex-col items-center gap-1 cursor-pointer"
+              className="flex flex-1 cursor-pointer flex-col items-center gap-1"
               onMouseEnter={() => setHoveredIndex(index)}
               onMouseLeave={() => setHoveredIndex(null)}
+              onClick={() =>
+                setHoveredIndex((current) => (current === index ? null : index))
+              }
             >
-              <div className="w-full h-16 flex items-end justify-center">
+              <div className="flex h-20 w-full items-end justify-center">
                 <div
                   className={cn(
-                    "w-full max-w-6 transition-all duration-150",
-                    isToday ? "bg-primary" : "bg-primary/50",
-                    isHovered && "bg-primary scale-x-110",
-                    day.active_seconds === 0 && "bg-muted h-0.5"
+                    "relative w-full max-w-7 brutalist-border bg-muted/20 transition-all duration-150",
+                    isHovered && "scale-x-105",
+                    isToday && "border-primary",
+                    totalSeconds === 0 && "h-1"
                   )}
                   style={{
-                    height: day.active_seconds > 0 ? `${Math.max(heightPercent, 8)}%` : "2px",
+                    height: totalSeconds > 0 ? `${Math.max(dayHeightPercent, 8)}%` : "4px",
                   }}
-                />
+                >
+                  {totalSeconds > 0 && (
+                    <>
+                      <div
+                        className="absolute bottom-0 left-0 w-full bg-primary transition-all duration-150"
+                        style={{ height: `${Math.max(activeHeightPercent, 4)}%` }}
+                      />
+                      <div
+                        className="absolute left-0 w-full bg-muted-foreground/40 transition-all duration-150"
+                        style={{
+                          bottom: `${Math.max(activeHeightPercent, 4)}%`,
+                          height: `${Math.max(idleHeightPercent, 0)}%`,
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
               </div>
               <span
                 className={cn(
-                  "text-[10px] font-mono-display tracking-wider transition-colors",
+                  "font-mono-display text-[10px] tracking-wider transition-colors",
                   isToday || isHovered
                     ? "font-semibold text-primary"
                     : "text-muted-foreground"
@@ -129,8 +191,8 @@ export function FocusChart({ data }: FocusChartProps) {
         })}
       </div>
       
-      <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider">
-        Active time per day
+      <p className="text-center text-[10px] uppercase tracking-wider text-muted-foreground">
+        Amber = active, gray = idle
       </p>
     </div>
   );

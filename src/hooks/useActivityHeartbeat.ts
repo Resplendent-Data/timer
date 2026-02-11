@@ -8,12 +8,13 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getSettings } from "../lib/store";
 
 /** Heartbeat interval in milliseconds (must match Rust HEARTBEAT_INTERVAL_SECS * 1000) */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
-/** Idle threshold in seconds - if idle time exceeds this, consider user idle */
-const IDLE_THRESHOLD_SECS = 60;
+/** Lower bound for stats idle threshold */
+const MIN_IDLE_THRESHOLD_SECS = 60;
 
 /**
  * Hook that sends activity heartbeats to the backend every 30 seconds.
@@ -27,8 +28,14 @@ export function useActivityHeartbeat(): void {
       // Get current idle time from the system
       const idleSeconds = await invoke<number>("get_idle_time");
 
-      // User is considered idle if they've been inactive for more than threshold
-      const isIdle = idleSeconds >= IDLE_THRESHOLD_SECS;
+      // Align stats classification with the configured idle threshold.
+      const settings = await getSettings();
+      const configuredThresholdSecs = (settings?.idleThresholdMinutes ?? 10) * 60;
+      const idleThresholdSecs = Math.max(
+        MIN_IDLE_THRESHOLD_SECS,
+        configuredThresholdSecs
+      );
+      const isIdle = idleSeconds >= idleThresholdSecs;
 
       // Send heartbeat to backend
       await invoke("record_heartbeat", { isIdle });

@@ -56,6 +56,8 @@ pub struct ProductivityStats {
     // ClickUp sessions
     pub sessions_today: i64,
     pub sessions_week: i64,
+    pub session_seconds_today: i64,
+    pub session_seconds_week: i64,
     pub avg_session_minutes: f64,
 
     // Weekly comparison
@@ -251,10 +253,13 @@ fn xp_for_level(level: i64) -> i64 {
 }
 
 /// Calculate current and best streaks.
-/// A streak is consecutive days with any app activity (active_seconds > 0).
+/// A streak is consecutive days with any app activity or tracked session.
 fn calculate_streaks(conn: &Connection, today: NaiveDate) -> Result<(i64, i64)> {
-    let mut stmt =
-        conn.prepare("SELECT date FROM activity_days WHERE active_seconds > 0 ORDER BY date DESC")?;
+    let mut stmt = conn.prepare(
+        "SELECT date FROM activity_days
+         WHERE active_seconds > 0 OR session_count > 0
+         ORDER BY date DESC",
+    )?;
 
     let dates: Vec<String> = stmt
         .query_map((), |row| row.get(0))?
@@ -330,21 +335,29 @@ pub fn get_productivity_stats() -> Result<ProductivityStats> {
         .unwrap_or(week_start);
 
     // Today's activity
-    let (active_today, idle_today, sessions_today): (i64, i64, i64) = conn
-        .query_row(
-            "SELECT COALESCE(active_seconds, 0), COALESCE(idle_seconds, 0), COALESCE(session_count, 0) 
+    let (active_today, idle_today, sessions_today, session_seconds_today): (i64, i64, i64, i64) =
+        conn.query_row(
+            "SELECT
+                COALESCE(active_seconds, 0),
+                COALESCE(idle_seconds, 0),
+                COALESCE(session_count, 0),
+                COALESCE(session_seconds, 0)
              FROM activity_days WHERE date = ?",
             (today.to_string(),),
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
-        .unwrap_or((0, 0, 0));
+        .unwrap_or((0, 0, 0, 0));
 
     // This week's activity
-    let (active_week, sessions_week, _session_seconds_week): (i64, i64, i64) = conn
+    let (active_week, sessions_week, session_seconds_week): (i64, i64, i64) = conn
         .query_row(
-            "SELECT COALESCE(SUM(active_seconds), 0), COALESCE(SUM(session_count), 0), COALESCE(SUM(session_seconds), 0) 
-             FROM activity_days WHERE date >= ?",
-            (week_start.to_string(),),
+            "SELECT
+                COALESCE(SUM(active_seconds), 0),
+                COALESCE(SUM(session_count), 0),
+                COALESCE(SUM(session_seconds), 0)
+             FROM activity_days
+             WHERE date BETWEEN ? AND ?",
+            (week_start.to_string(), today.to_string()),
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap_or((0, 0, 0));
@@ -462,6 +475,8 @@ pub fn get_productivity_stats() -> Result<ProductivityStats> {
         xp_progress_percent,
         sessions_today,
         sessions_week,
+        session_seconds_today,
+        session_seconds_week,
         avg_session_minutes,
         active_seconds_week: active_week,
         active_seconds_last_week: active_last_week,
