@@ -1,0 +1,4 @@
+interface:
+  display_name: "Resplendent Release"
+  short_description: "Ship versioned releases for this repo"
+  default_prompt: "Use $resplendent-release to bump the next version, run checks, commit, push master, and verify the release workflow."
