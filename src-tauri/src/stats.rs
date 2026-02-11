@@ -4,7 +4,7 @@
 //! Uses a heartbeat system for accurate time tracking.
 
 use chrono::{Datelike, NaiveDate};
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -13,6 +13,7 @@ const HEARTBEAT_INTERVAL_SECS: i64 = 30;
 
 /// Database retention period in days
 const DB_RETENTION_DAYS: i64 = 90;
+const DEFAULT_WORK_DAYS: [usize; 5] = [0, 1, 2, 3, 4];
 
 /// Daily activity record
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +111,16 @@ fn get_connection() -> Result<Connection> {
         (),
     )?;
 
+    // Heartbeat event log used for work-hours-aware stats aggregation
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS activity_heartbeats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recorded_at INTEGER NOT NULL,
+            is_idle BOOLEAN NOT NULL
+        )",
+        (),
+    )?;
+
     // Migration: Add session_duration_secs column if it doesn't exist (for existing databases)
     let _ = conn.execute(
         "ALTER TABLE idle_events ADD COLUMN session_duration_secs INTEGER DEFAULT 0",
@@ -118,6 +129,10 @@ fn get_connection() -> Result<Connection> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_idle_events_started_at ON idle_events(started_at)",
+        (),
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_activity_heartbeats_recorded_at ON activity_heartbeats(recorded_at)",
         (),
     )?;
 
@@ -151,18 +166,29 @@ fn cleanup_old_data(conn: &Connection) {
 
     let _ = conn.execute("DELETE FROM idle_events WHERE started_at < ?", (cutoff,));
     let _ = conn.execute("DELETE FROM activity_days WHERE date < ?", (cutoff_date,));
+    let _ = conn.execute(
+        "DELETE FROM activity_heartbeats WHERE recorded_at < ?",
+        (cutoff,),
+    );
 }
 
 /// Record a heartbeat from the frontend.
 /// Called every 30 seconds with the current idle status.
 pub fn record_heartbeat(is_idle: bool) {
     if let Ok(conn) = get_connection() {
+        let now_ts = chrono::Local::now().timestamp();
         let today = chrono::Local::now().date_naive().to_string();
 
         // Ensure the day exists
         let _ = conn.execute(
             "INSERT OR IGNORE INTO activity_days (date) VALUES (?)",
             (&today,),
+        );
+
+        // Keep heartbeat timestamps so stats can filter by work hours.
+        let _ = conn.execute(
+            "INSERT INTO activity_heartbeats (recorded_at, is_idle) VALUES (?, ?)",
+            (now_ts, is_idle),
         );
 
         // Add heartbeat interval to appropriate column
@@ -252,6 +278,170 @@ fn xp_for_level(level: i64) -> i64 {
     }
 }
 
+fn clamp_work_minutes(value: Option<i64>, default_value: i64) -> i64 {
+    value.unwrap_or(default_value).clamp(0, (24 * 60) - 1)
+}
+
+fn normalize_work_days(value: Option<Vec<i64>>) -> [bool; 7] {
+    let mut work_days = [false; 7];
+    let mut any_selected = false;
+
+    if let Some(days) = value {
+        for day in days {
+            if (0..=6).contains(&day) {
+                work_days[day as usize] = true;
+                any_selected = true;
+            }
+        }
+    }
+
+    if !any_selected {
+        for day in DEFAULT_WORK_DAYS {
+            work_days[day] = true;
+        }
+    }
+
+    work_days
+}
+
+fn is_work_day(date: NaiveDate, work_days: &[bool; 7]) -> bool {
+    let index = date.weekday().num_days_from_monday() as usize;
+    work_days[index]
+}
+
+fn build_work_hours_condition_sql(work_start_minutes: i64, work_end_minutes: i64) -> String {
+    let minute_of_day = "(CAST(strftime('%H', datetime(recorded_at, 'unixepoch', 'localtime')) AS INTEGER) * 60 + CAST(strftime('%M', datetime(recorded_at, 'unixepoch', 'localtime')) AS INTEGER))";
+
+    if work_start_minutes == work_end_minutes {
+        "1 = 1".to_string()
+    } else if work_start_minutes < work_end_minutes {
+        format!(
+            "{minute_of_day} >= {work_start_minutes} AND {minute_of_day} < {work_end_minutes}"
+        )
+    } else {
+        format!(
+            "{minute_of_day} >= {work_start_minutes} OR {minute_of_day} < {work_end_minutes}"
+        )
+    }
+}
+
+fn get_day_activity_for_work_hours(
+    conn: &Connection,
+    date: &str,
+    work_start_minutes: i64,
+    work_end_minutes: i64,
+    work_days: &[bool; 7],
+) -> Result<(i64, i64)> {
+    if let Ok(parsed_date) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+        if !is_work_day(parsed_date, work_days) {
+            return Ok((0, 0));
+        }
+    }
+
+    let work_hours_condition = build_work_hours_condition_sql(work_start_minutes, work_end_minutes);
+    let sql = format!(
+        "SELECT
+            COUNT(*),
+            COALESCE(SUM(CASE WHEN is_idle = 0 AND ({work_hours_condition}) THEN ?1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN is_idle = 1 AND ({work_hours_condition}) THEN ?1 ELSE 0 END), 0)
+         FROM activity_heartbeats
+         WHERE date(datetime(recorded_at, 'unixepoch', 'localtime')) = ?2"
+    );
+
+    let (heartbeat_count, filtered_active, filtered_idle): (i64, i64, i64) = conn.query_row(
+        &sql,
+        params![HEARTBEAT_INTERVAL_SECS, date],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+
+    if heartbeat_count > 0 {
+        return Ok((filtered_active, filtered_idle));
+    }
+
+    let fallback = conn
+        .query_row(
+            "SELECT COALESCE(active_seconds, 0), COALESCE(idle_seconds, 0)
+             FROM activity_days WHERE date = ?",
+            (date,),
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap_or((0, 0));
+
+    Ok(fallback)
+}
+
+fn get_active_for_range(
+    conn: &Connection,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    work_start_minutes: i64,
+    work_end_minutes: i64,
+    work_days: &[bool; 7],
+) -> Result<i64> {
+    if start_date > end_date {
+        return Ok(0);
+    }
+
+    let mut total_active = 0;
+    let mut cursor = start_date;
+
+    while cursor <= end_date {
+        let (active, _) = get_day_activity_for_work_hours(
+            conn,
+            &cursor.to_string(),
+            work_start_minutes,
+            work_end_minutes,
+            work_days,
+        )?;
+        total_active += active;
+
+        let Some(next_day) = cursor.checked_add_signed(chrono::Duration::days(1)) else {
+            break;
+        };
+        cursor = next_day;
+    }
+
+    Ok(total_active)
+}
+
+fn get_total_active_seconds_for_work_hours(
+    conn: &Connection,
+    work_start_minutes: i64,
+    work_end_minutes: i64,
+    work_days: &[bool; 7],
+) -> Result<i64> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT date
+         FROM (
+            SELECT date AS date FROM activity_days
+            UNION ALL
+            SELECT date(datetime(recorded_at, 'unixepoch', 'localtime')) AS date FROM activity_heartbeats
+         )
+         WHERE date IS NOT NULL
+         ORDER BY date",
+    )?;
+
+    let dates: Vec<String> = stmt
+        .query_map((), |row| row.get(0))?
+        .filter_map(|d| d.ok())
+        .collect();
+
+    let mut total_active = 0;
+    for date in dates {
+        let (active, _) =
+            get_day_activity_for_work_hours(
+                conn,
+                &date,
+                work_start_minutes,
+                work_end_minutes,
+                work_days,
+            )?;
+        total_active += active;
+    }
+
+    Ok(total_active)
+}
+
 /// Calculate current and best streaks.
 /// A streak is consecutive days with any app activity or tracked session.
 fn calculate_streaks(conn: &Connection, today: NaiveDate) -> Result<(i64, i64)> {
@@ -317,10 +507,17 @@ fn calculate_streaks(conn: &Connection, today: NaiveDate) -> Result<(i64, i64)> 
 }
 
 /// Get complete productivity stats.
-pub fn get_productivity_stats() -> Result<ProductivityStats> {
+pub fn get_productivity_stats(
+    work_start_minutes: Option<i64>,
+    work_end_minutes: Option<i64>,
+    work_days: Option<Vec<i64>>,
+) -> Result<ProductivityStats> {
     let conn = get_connection()?;
     let now = chrono::Local::now();
     let today = now.date_naive();
+    let work_start_minutes = clamp_work_minutes(work_start_minutes, 8 * 60);
+    let work_end_minutes = clamp_work_minutes(work_end_minutes, 17 * 60);
+    let work_days = normalize_work_days(work_days);
 
     // Calculate week boundaries (Monday to Sunday)
     let days_since_monday = today.weekday().num_days_from_monday() as i64;
@@ -334,42 +531,55 @@ pub fn get_productivity_stats() -> Result<ProductivityStats> {
         .checked_sub_signed(chrono::Duration::days(1))
         .unwrap_or(week_start);
 
-    // Today's activity
-    let (active_today, idle_today, sessions_today, session_seconds_today): (i64, i64, i64, i64) =
-        conn.query_row(
+    // Today's activity (work-hours-aware active/idle + session stats)
+    let (active_today, idle_today) = get_day_activity_for_work_hours(
+        &conn,
+        &today.to_string(),
+        work_start_minutes,
+        work_end_minutes,
+        &work_days,
+    )?;
+    let (sessions_today, session_seconds_today): (i64, i64) = conn
+        .query_row(
             "SELECT
-                COALESCE(active_seconds, 0),
-                COALESCE(idle_seconds, 0),
                 COALESCE(session_count, 0),
                 COALESCE(session_seconds, 0)
              FROM activity_days WHERE date = ?",
             (today.to_string(),),
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .unwrap_or((0, 0, 0, 0));
+        .unwrap_or((0, 0));
 
-    // This week's activity
-    let (active_week, sessions_week, session_seconds_week): (i64, i64, i64) = conn
+    // This week's session totals (work-hours do not alter ClickUp session durations/counts)
+    let (sessions_week, session_seconds_week): (i64, i64) = conn
         .query_row(
             "SELECT
-                COALESCE(SUM(active_seconds), 0),
                 COALESCE(SUM(session_count), 0),
                 COALESCE(SUM(session_seconds), 0)
              FROM activity_days
              WHERE date BETWEEN ? AND ?",
             (week_start.to_string(), today.to_string()),
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .unwrap_or((0, 0, 0));
+        .unwrap_or((0, 0));
 
-    // Last week's activity
-    let active_last_week: i64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(active_seconds), 0) FROM activity_days WHERE date BETWEEN ? AND ?",
-            (last_week_start.to_string(), last_week_end.to_string()),
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    // Work-hours-aware weekly active totals
+    let active_week = get_active_for_range(
+        &conn,
+        week_start,
+        today,
+        work_start_minutes,
+        work_end_minutes,
+        &work_days,
+    )?;
+    let active_last_week = get_active_for_range(
+        &conn,
+        last_week_start,
+        last_week_end,
+        work_start_minutes,
+        work_end_minutes,
+        &work_days,
+    )?;
 
     // Average session duration (across all time)
     let (total_sessions, total_session_seconds): (i64, i64) = conn
@@ -386,14 +596,14 @@ pub fn get_productivity_stats() -> Result<ProductivityStats> {
         0.0
     };
 
-    // XP = total active minutes across all time
-    let total_active_seconds: i64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(active_seconds), 0) FROM activity_days",
-            (),
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    // XP = total active minutes across all time (work-hours-aware)
+    let total_active_seconds =
+        get_total_active_seconds_for_work_hours(
+            &conn,
+            work_start_minutes,
+            work_end_minutes,
+            &work_days,
+        )?;
 
     let total_xp = total_active_seconds / 60; // 1 XP per active minute
     let current_level = calculate_level(total_xp);
@@ -418,28 +628,29 @@ pub fn get_productivity_stats() -> Result<ProductivityStats> {
             .unwrap_or(today);
         let date_str = date.to_string();
 
-        let day = conn
+        let (day_active, day_idle) = get_day_activity_for_work_hours(
+            &conn,
+            &date_str,
+            work_start_minutes,
+            work_end_minutes,
+            &work_days,
+        )?;
+        let (session_count, session_seconds): (i64, i64) = conn
             .query_row(
-                "SELECT date, active_seconds, idle_seconds, session_count, session_seconds 
+                "SELECT COALESCE(session_count, 0), COALESCE(session_seconds, 0)
                  FROM activity_days WHERE date = ?",
                 (&date_str,),
-                |row| {
-                    Ok(DailyActivity {
-                        date: row.get(0)?,
-                        active_seconds: row.get(1)?,
-                        idle_seconds: row.get(2)?,
-                        session_count: row.get(3)?,
-                        session_seconds: row.get(4)?,
-                    })
-                },
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .unwrap_or(DailyActivity {
-                date: date_str,
-                active_seconds: 0,
-                idle_seconds: 0,
-                session_count: 0,
-                session_seconds: 0,
-            });
+            .unwrap_or((0, 0));
+
+        let day = DailyActivity {
+            date: date_str,
+            active_seconds: day_active,
+            idle_seconds: day_idle,
+            session_count,
+            session_seconds,
+        };
 
         last_7_days.push(day);
     }

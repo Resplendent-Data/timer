@@ -3,20 +3,45 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ============================================
-   BRUTALIST TIMER THEME
-   Industrial control panel aesthetic with
-   warm amber accents and sharp geometry
-   ============================================ */
+@font-face {
+  font-family: "Muller";
+  src: url("../fonts/muller/Muller-Light.woff") format("woff");
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Muller";
+  src: url("../fonts/muller/Muller-Regular.woff") format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Muller";
+  src: url("../fonts/muller/Muller-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Muller";
+  src: url("../fonts/muller/Muller-Heavy.woff") format("woff");
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+}
 
 @theme inline {
-  --radius-sm: 0;
-  --radius-md: 0;
-  --radius-lg: 0;
-  --radius-xl: 0;
-  --radius-2xl: 0;
-  --radius-3xl: 0;
-  --radius-4xl: 0;
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -35,11 +60,17 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -48,213 +79,170 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  
-  /* Custom font family for timer display */
-  --font-mono-display: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --font-sans: var(--font-family-sans);
+  --font-mono-display: var(--font-family-sans);
 }
 
-/* ============================================
-   BRUTALIST COLOR PALETTE - Dark Mode Always
-   Warm blacks with amber accents
-   ============================================ */
-
 :root {
-  --radius: 0;
-  
-  /* Base - warm black */
-  --background: oklch(0.12 0.008 60);
-  --foreground: oklch(0.90 0.015 75);
-  
-  /* Cards/surfaces - subtle lift */
-  --card: oklch(0.16 0.008 60);
-  --card-foreground: oklch(0.90 0.015 75);
-  
-  /* Popover */
-  --popover: oklch(0.18 0.008 60);
-  --popover-foreground: oklch(0.90 0.015 75);
-  
-  /* Primary - warm amber */
-  --primary: oklch(0.75 0.16 65);
-  --primary-foreground: oklch(0.12 0.008 60);
-  
-  /* Secondary - muted surface */
-  --secondary: oklch(0.22 0.01 60);
-  --secondary-foreground: oklch(0.85 0.015 75);
-  
-  /* Muted */
-  --muted: oklch(0.20 0.008 60);
-  --muted-foreground: oklch(0.55 0.015 60);
-  
-  /* Accent - bright gold for running timer */
-  --accent: oklch(0.82 0.17 75);
-  --accent-foreground: oklch(0.12 0.008 60);
-  
-  /* Destructive - muted rust red */
-  --destructive: oklch(0.55 0.18 25);
-  
-  /* Borders - visible, structural */
-  --border: oklch(0.30 0.015 60);
-  --input: oklch(0.25 0.01 60);
-  --ring: oklch(0.75 0.16 65);
-  
-  /* Charts - warm palette */
-  --chart-1: oklch(0.75 0.16 65);
-  --chart-2: oklch(0.65 0.14 45);
-  --chart-3: oklch(0.55 0.12 30);
-  --chart-4: oklch(0.70 0.10 85);
-  --chart-5: oklch(0.60 0.08 100);
-  
-  /* Sidebar */
-  --sidebar: oklch(0.14 0.008 60);
-  --sidebar-foreground: oklch(0.90 0.015 75);
-  --sidebar-primary: oklch(0.75 0.16 65);
-  --sidebar-primary-foreground: oklch(0.12 0.008 60);
-  --sidebar-accent: oklch(0.22 0.01 60);
-  --sidebar-accent-foreground: oklch(0.85 0.015 75);
-  --sidebar-border: oklch(0.30 0.015 60);
-  --sidebar-ring: oklch(0.75 0.16 65);
-  
+  --radius: 14px;
+  --font-family-sans: "Muller", -apple-system, "system-ui", "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+
+  --brand-plum: #4c3752;
+  --brand-lilac: #bf8abd;
+
+  --background: #1b1b37;
+  --foreground: #f0f0fa;
+
+  --card: #323258;
+  --card-foreground: #f0f0fa;
+
+  --popover: #2b2b4f;
+  --popover-foreground: #f0f0fa;
+
+  --primary: #a16eff;
+  --primary-foreground: #1b1b37;
+
+  --secondary: #28284a;
+  --secondary-foreground: #f0f0fa;
+
+  --muted: #252547;
+  --muted-foreground: #b5b5d7;
+
+  --accent: #fbca52;
+  --accent-foreground: #1b1b37;
+
+  --success: #00d68f;
+  --info: #0095ff;
+  --warning: #ffaa00;
+  --destructive: #ff3d71;
+
+  --border: #4a4a72;
+  --input: #3a3a66;
+  --ring: #a16eff;
+
+  --chart-1: #a16eff;
+  --chart-2: #fbca52;
+  --chart-3: #00d68f;
+  --chart-4: #0095ff;
+  --chart-5: #ff3d71;
+
+  --sidebar: #202043;
+  --sidebar-foreground: #f0f0fa;
+  --sidebar-primary: #a16eff;
+  --sidebar-primary-foreground: #1b1b37;
+  --sidebar-accent: #fbca52;
+  --sidebar-accent-foreground: #1b1b37;
+  --sidebar-border: #4a4a72;
+  --sidebar-ring: #a16eff;
+
   color-scheme: dark;
 }
 
-/* Force dark mode - brutalist theme is always dark */
 .dark,
 :root:not(.light) {
-  --background: oklch(0.12 0.008 60);
-  --foreground: oklch(0.90 0.015 75);
-  --card: oklch(0.16 0.008 60);
-  --card-foreground: oklch(0.90 0.015 75);
-  --popover: oklch(0.18 0.008 60);
-  --popover-foreground: oklch(0.90 0.015 75);
-  --primary: oklch(0.75 0.16 65);
-  --primary-foreground: oklch(0.12 0.008 60);
-  --secondary: oklch(0.22 0.01 60);
-  --secondary-foreground: oklch(0.85 0.015 75);
-  --muted: oklch(0.20 0.008 60);
-  --muted-foreground: oklch(0.55 0.015 60);
-  --accent: oklch(0.82 0.17 75);
-  --accent-foreground: oklch(0.12 0.008 60);
-  --destructive: oklch(0.55 0.18 25);
-  --border: oklch(0.30 0.015 60);
-  --input: oklch(0.25 0.01 60);
-  --ring: oklch(0.75 0.16 65);
+  --background: #1b1b37;
+  --foreground: #f0f0fa;
+  --card: #323258;
+  --card-foreground: #f0f0fa;
+  --popover: #2b2b4f;
+  --popover-foreground: #f0f0fa;
+  --primary: #a16eff;
+  --primary-foreground: #1b1b37;
+  --secondary: #28284a;
+  --secondary-foreground: #f0f0fa;
+  --muted: #252547;
+  --muted-foreground: #b5b5d7;
+  --accent: #fbca52;
+  --accent-foreground: #1b1b37;
+  --destructive: #ff3d71;
+  --border: #4a4a72;
+  --input: #3a3a66;
+  --ring: #a16eff;
 }
-
-/* ============================================
-   BASE STYLES
-   ============================================ */
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   html,
   body,
   #root {
     @apply h-full overflow-hidden;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: var(--font-family-sans);
     font-feature-settings: "ss01", "ss02", "cv01";
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  button,
+  label {
+    font-family: var(--font-family-sans);
   }
 }
 
-/* ============================================
-   TYPOGRAPHY UTILITIES
-   ============================================ */
-
 .font-mono-display {
-  font-family: var(--font-mono-display);
-  font-feature-settings: "tnum", "zero";
+  font-family: var(--font-family-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 .text-timer {
-  font-family: var(--font-mono-display);
-  font-size: 3.5rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  font-feature-settings: "tnum", "zero";
+  font-family: var(--font-family-sans);
+  font-size: 3.35rem;
+  font-weight: 900;
+  line-height: 0.92;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .text-timer-sm {
-  font-family: var(--font-mono-display);
+  font-family: var(--font-family-sans);
   font-size: 2rem;
-  font-weight: 600;
-  line-height: 1;
-  font-feature-settings: "tnum", "zero";
+  font-weight: 700;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ============================================
-   BRUTALIST UTILITIES
-   ============================================ */
-
 .brutalist-border {
-  border: 2px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
 }
 
 .brutalist-border-thick {
-  border: 3px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .brutalist-divider {
   border-top: 1px solid var(--border);
 }
 
-/* Uppercase labels with letter spacing */
 .brutalist-label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
 
-/* ============================================
-   TIMER GLOW EFFECT
-   Subtle amber pulse when timer is running
-   ============================================ */
-
-@keyframes timer-pulse {
-  0%, 100% {
-    text-shadow: 
-      0 0 20px oklch(0.75 0.16 65 / 0.4),
-      0 0 40px oklch(0.75 0.16 65 / 0.2);
-  }
-  50% {
-    text-shadow: 
-      0 0 30px oklch(0.75 0.16 65 / 0.6),
-      0 0 60px oklch(0.75 0.16 65 / 0.3);
-  }
-}
-
 .timer-glow {
-  color: oklch(0.82 0.17 75);
-  animation: timer-pulse 2s ease-in-out infinite;
+  color: var(--accent);
+  text-shadow: 0 0 16px rgb(251 202 82 / 0.25);
 }
 
 .timer-idle {
   color: var(--muted-foreground);
 }
-
-/* ============================================
-   NOISE TEXTURE OVERLAY
-   Subtle grain for industrial feel
-   ============================================ */
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.03;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-}
-
-/* ============================================
-   TAURI-SPECIFIC STYLES
-   ============================================ */
 
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
@@ -265,7 +253,6 @@ body::before {
   user-select: none;
 }
 
-/* Make interactive elements within drag region clickable */
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] a,
 [data-tauri-drag-region] input,
@@ -273,14 +260,9 @@ body::before {
   -webkit-app-region: no-drag;
 }
 
-/* ============================================
-   SCROLLBAR STYLING
-   Minimal, matches theme
-   ============================================ */
-
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -288,75 +270,104 @@ body::before {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid var(--background);
+  background: #4a4a72;
+  border: 2px solid #1b1b37;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
+  background: #6a6aa5;
 }
 
-/* ============================================
-   COMPONENT OVERRIDES
-   Ensure brutalist styling on UI primitives
-   ============================================ */
-
-/* Cards - thick borders, no shadows */
 [data-slot="card"] {
-  border-width: 2px;
-  box-shadow: none;
+  border-width: 1px;
+  border-color: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 20px rgb(8 8 22 / 0.2);
 }
 
-/* Buttons - sharp, bold */
-button {
-  border-radius: 0 !important;
-}
-
-/* Inputs - visible borders */
-input, textarea, select {
-  border-radius: 0 !important;
-  border-width: 2px;
-}
-
-/* Badges - rectangular */
 [data-slot="badge"] {
-  border-radius: 0;
+  border-radius: 999px;
   text-transform: uppercase;
   font-size: 0.625rem;
   letter-spacing: 0.05em;
 }
 
-/* Tabs - underline style */
 [role="tablist"] {
-  border-radius: 0;
-  background: transparent;
-  border-bottom: 2px solid var(--border);
-  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: rgb(40 40 74 / 0.55);
+  padding: 0.25rem;
 }
 
 [role="tab"] {
-  border-radius: 0;
+  border-radius: calc(var(--radius) - 4px);
   text-transform: uppercase;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 0.75rem 1rem;
-  background: transparent;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
+  padding: 0.6rem 0.8rem;
+  color: var(--muted-foreground);
 }
 
 [role="tab"][data-state="active"] {
-  background: transparent;
-  border-bottom-color: var(--primary);
-  color: var(--primary);
+  background: rgb(50 50 88 / 0.85);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px rgb(161 110 255 / 0.35);
 }
 
-/* Switch - rectangular track */
-[role="switch"] {
-  border-radius: 0 !important;
+.text-success {
+  color: var(--success) !important;
 }
 
-[role="switch"] span {
-  border-radius: 0 !important;
+.text-info {
+  color: var(--info) !important;
+}
+
+.text-warning {
+  color: var(--warning) !important;
+}
+
+.text-danger {
+  color: var(--destructive) !important;
+}
+
+.bg-success {
+  background-color: var(--success) !important;
+}
+
+.bg-info {
+  background-color: var(--info) !important;
+}
+
+.bg-warning {
+  background-color: var(--warning) !important;
+}
+
+.bg-danger {
+  background-color: var(--destructive) !important;
+}
+
+.border-success {
+  border-color: var(--success) !important;
+}
+
+.border-info {
+  border-color: var(--info) !important;
+}
+
+.border-warning {
+  border-color: var(--warning) !important;
+}
+
+.border-danger {
+  border-color: var(--destructive) !important;
+}
+
+.bg-success-faint {
+  background-color: rgb(0 214 143 / 0.1) !important;
+}
+
+.bg-success-soft {
+  background-color: rgb(0 214 143 / 0.2) !important;
 }

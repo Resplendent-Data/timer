@@ -1,7 +1,7 @@
 /**
  * Timer controls component for starting and stopping ClickUp timers.
  *
- * Brutalist design with compact, functional controls.
+ * Branded layout with compact, functional controls.
  * Features:
  * - Search for tasks with auto-complete (debounced)
  * - Recent tasks list for quick access
@@ -338,8 +338,8 @@ export function TimerControls({ status }: TimerControlsProps) {
     return (
       <div className="space-y-3">
         {error && (
-          <div className="brutalist-border border-destructive bg-destructive/10 p-3">
-            <p className="text-sm text-destructive font-mono-display">{error}</p>
+          <div className="rounded-lg border border-destructive/60 bg-destructive/10 p-3">
+            <p className="text-sm text-destructive">{error}</p>
           </div>
         )}
         <Button
@@ -370,7 +370,7 @@ export function TimerControls({ status }: TimerControlsProps) {
       {status.lastStoppedTaskId && status.lastStoppedTaskName && (
         <Button
           variant="secondary"
-          className="w-full justify-start text-left h-auto py-3 brutalist-border"
+          className="h-auto w-full justify-start rounded-lg border border-border py-3 text-left"
           onClick={handleResumeTimer}
           disabled={isProcessing}
         >
@@ -387,8 +387,8 @@ export function TimerControls({ status }: TimerControlsProps) {
 
       {/* Recent tasks */}
       {recentTasks.length > 0 && (
-        <div className="brutalist-border">
-          <div className="px-3 py-2 brutalist-divider border-t-0">
+        <div className="overflow-hidden rounded-lg border border-border bg-card/85 shadow-sm">
+          <div className="border-b border-border px-3 py-2">
             <span className="brutalist-label">Recent</span>
           </div>
           <div className="divide-y divide-border">
@@ -425,7 +425,7 @@ export function TimerControls({ status }: TimerControlsProps) {
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isProcessing}
-          className="pr-8 h-10 font-mono-display text-sm"
+          className="h-10 pr-8 text-sm"
         />
         {isSearching && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -445,7 +445,7 @@ export function TimerControls({ status }: TimerControlsProps) {
 
         {/* Search results dropdown - positioned absolutely to overlay content */}
         {searchResults.length > 0 && (
-          <div className="absolute left-0 right-0 top-full mt-1 z-50 brutalist-border bg-card shadow-lg">
+          <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
             <div className="max-h-56 overflow-y-auto">
               <div ref={resultsRef} className="divide-y divide-border">
                 {searchResults.map((task, index) => (
@@ -497,8 +497,8 @@ export function TimerControls({ status }: TimerControlsProps) {
                 ))}
               </div>
             </div>
-            <div className="px-3 py-1.5 brutalist-divider text-center bg-card">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            <div className="border-t border-border bg-card px-3 py-1.5 text-center">
+              <p className="text-[10px] tracking-wide text-muted-foreground">
                 Enter to start &middot; Shift+click quick start
               </p>
             </div>
@@ -508,8 +508,8 @@ export function TimerControls({ status }: TimerControlsProps) {
 
       {/* Error display */}
       {error && (
-        <div className="brutalist-border border-destructive bg-destructive/10 p-3">
-          <p className="text-sm text-destructive font-mono-display">{error}</p>
+        <div className="rounded-lg border border-destructive/60 bg-destructive/10 p-3">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 /**
  * Timer hero display component.
  *
- * Brutalist design with large timer display as the hero element.
+ * Brand-aligned timer hero display.
  * Shows elapsed time prominently when running, with compact status indicators.
  */
 
@@ -139,7 +139,7 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
   return (
     <div className="space-y-3">
       {/* Hero Timer Display */}
-      <div className="brutalist-border bg-card p-6">
+      <div className="brutalist-border bg-card/95 p-6 shadow-sm">
         {/* Large Timer */}
         <div className="text-center py-4">
           <div
@@ -155,20 +155,20 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
             {isRunning ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-center gap-2">
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="h-2 w-2 rounded-full bg-[var(--success)] animate-pulse" />
                   <span className="text-sm font-medium truncate max-w-[250px]">
                     {status.runningTaskName}
                   </span>
                   {canCopyBranch && (
                     <button
                       onClick={handleCopyBranch}
-                      className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       title="Copy git branch name"
                     >
                       {copied ? (
                         <>
-                          <Check className="w-3 h-3 text-emerald-500" />
-                          <span className="text-emerald-500">Copied</span>
+                          <Check className="h-3 w-3 text-[var(--success)]" />
+                          <span className="text-[var(--success)]">Copied</span>
                         </>
                       ) : (
                         <>
@@ -192,7 +192,7 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
                     {status.runningTimerBillable && (
                       <Badge
                         variant="outline"
-                        className="text-[10px] px-1.5 py-0 border-emerald-600 text-emerald-500"
+                        className="border-[var(--success)]/80 px-1.5 py-0 text-[10px] text-[var(--success)]"
                       >
                         BILLABLE
                       </Badge>
@@ -213,7 +213,7 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
                 )}
               </div>
             ) : (
-              <span className="text-sm text-muted-foreground uppercase tracking-wider">
+              <span className="text-sm text-muted-foreground tracking-wide">
                 No timer running
               </span>
             )}
@@ -233,7 +233,7 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
               <span className="brutalist-label">Monitor</span>
               <span
                 className={`font-mono-display font-semibold ${
-                  status.isRunning ? "text-emerald-500" : "text-muted-foreground"
+                  status.isRunning ? "text-[var(--success)]" : "text-muted-foreground"
                 }`}
               >
                 {status.isRunning ? "ON" : "OFF"}

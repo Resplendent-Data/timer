@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { IdleStatus } from "../hooks/useIdleChecker";
+import { getSettings, DEFAULT_WORK_DAYS } from "../lib/store";
 import { FocusChart } from "./stats/FocusChart";
 import { IdleHistory } from "./stats/IdleHistory";
 
@@ -138,6 +139,21 @@ interface StatsProps {
   status: IdleStatus;
 }
 
+function parseTimeToMinutes(time: string | null | undefined, fallback: number): number {
+  if (!time) return fallback;
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+  if (!match) return fallback;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+function normalizeWorkdays(days: number[] | null | undefined): number[] {
+  if (!Array.isArray(days)) return [...DEFAULT_WORK_DAYS];
+  const normalized = Array.from(
+    new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))
+  ).sort((a, b) => a - b);
+  return normalized.length > 0 ? normalized : [...DEFAULT_WORK_DAYS];
+}
+
 export function Stats({ status }: StatsProps) {
   const [stats, setStats] = useState<ProductivityStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -148,7 +164,15 @@ export function Stats({ status }: StatsProps) {
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<ProductivityStats>("get_productivity_stats");
+      const settings = await getSettings();
+      const workStartMinutes = parseTimeToMinutes(settings?.workdayStart, 8 * 60);
+      const workEndMinutes = parseTimeToMinutes(settings?.workdayEnd, 17 * 60);
+      const workDays = normalizeWorkdays(settings?.workdays);
+      const result = await invoke<ProductivityStats>("get_productivity_stats", {
+        workStartMinutes,
+        workEndMinutes,
+        workDays,
+      });
       setStats(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -250,6 +274,14 @@ export function Stats({ status }: StatsProps) {
   const earnedQuestXp = quests
     .filter((quest) => quest.current >= quest.target)
     .reduce((sum, quest) => sum + quest.rewardXp, 0);
+  const activeXpToday = Math.floor(stats.active_seconds_today / 60);
+  const completedQuestNames = quests
+    .filter((quest) => quest.current >= quest.target)
+    .map((quest) => quest.name);
+  const questXpSourceText =
+    completedQuestNames.length > 0
+      ? completedQuestNames.join(", ")
+      : "No quests completed yet";
 
   const weekChangePercent =
     stats.active_seconds_last_week > 0
@@ -278,7 +310,7 @@ export function Stats({ status }: StatsProps) {
     <div className="space-y-4 pb-2">
       <div className="relative overflow-hidden brutalist-border bg-card p-4">
         <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rotate-12 bg-primary/10" />
-        <div className="pointer-events-none absolute -bottom-8 -left-8 h-20 w-32 bg-emerald-500/10" />
+        <div className="pointer-events-none absolute -bottom-8 -left-8 h-20 w-32 bg-success-faint" />
 
         <div className="relative">
           <div className="mb-3 flex items-start justify-between gap-3">
@@ -295,8 +327,9 @@ export function Stats({ status }: StatsProps) {
                   {levelTitle(stats.current_level)}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="flex items-center gap-1 text-xs text-muted-foreground">
                 {stats.current_xp.toLocaleString()} XP total
+                <Hint text="Level XP is permanent and comes from active app time only: 1 XP per active minute. ClickUp sessions and quest rewards help tracking goals but do not directly increase level XP." />
               </p>
             </div>
 
@@ -326,7 +359,12 @@ export function Stats({ status }: StatsProps) {
 
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div className="brutalist-border bg-background/60 px-2 py-1.5">
-              <p className="text-muted-foreground">Quest XP Today</p>
+              <p className="flex items-center gap-1 text-muted-foreground">
+                Quest XP Today
+                <Hint
+                  text={`Quest XP is a daily bonus from completed quests below. Completed: ${completedQuestCount}/${quests.length}. Sources: ${questXpSourceText}.`}
+                />
+              </p>
               <p className="font-mono-display font-semibold text-primary">
                 +{earnedQuestXp}
               </p>
@@ -338,13 +376,19 @@ export function Stats({ status }: StatsProps) {
               </p>
             </div>
           </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Today&apos;s XP: +{activeXpToday} level XP from active time
+            {earnedQuestXp > 0
+              ? ` • +${earnedQuestXp} quest XP (${questXpSourceText})`
+              : " • complete quests below to earn quest XP"}
+          </p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="brutalist-border bg-card/70 p-3">
           <p className="brutalist-label flex items-center gap-1">
-            <Zap className="h-3 w-3 text-emerald-500" />
+            <Zap className="h-3 w-3 text-success" />
             Active Today
             <Hint text="System keyboard/mouse activity from heartbeat checks. This is not ClickUp timer data." />
           </p>
@@ -378,7 +422,7 @@ export function Stats({ status }: StatsProps) {
 
         <div className="brutalist-border bg-card/70 p-3">
           <p className="brutalist-label flex items-center gap-1">
-            <Target className="h-3 w-3 text-emerald-500" />
+            <Target className="h-3 w-3 text-success" />
             Weekly Sessions
             <Hint text="Count of completed ClickUp timer sessions this week." />
           </p>
@@ -429,7 +473,7 @@ export function Stats({ status }: StatsProps) {
                     <p
                       className={cn(
                         "text-sm font-medium",
-                        done && "text-emerald-500"
+                        done && "text-success"
                       )}
                     >
                       {quest.name}
@@ -443,7 +487,7 @@ export function Stats({ status }: StatsProps) {
                     <p
                       className={cn(
                         "text-[10px] uppercase tracking-wider",
-                        done ? "text-emerald-500" : "text-muted-foreground"
+                        done ? "text-success" : "text-muted-foreground"
                       )}
                     >
                       +{quest.rewardXp} XP
@@ -453,7 +497,7 @@ export function Stats({ status }: StatsProps) {
                 <Progress
                   value={progress}
                   className="h-1.5 brutalist-border bg-muted"
-                  indicatorClassName={done ? "bg-emerald-500" : "bg-primary"}
+                  indicatorClassName={done ? "bg-success" : "bg-primary"}
                 />
               </div>
             );
@@ -478,7 +522,7 @@ export function Stats({ status }: StatsProps) {
           <span
             className={cn(
               "font-mono-display text-xs",
-              stats.week_delta_seconds > 0 && "text-emerald-500",
+              stats.week_delta_seconds > 0 && "text-success",
               stats.week_delta_seconds < 0 && "text-destructive",
               stats.week_delta_seconds === 0 && "text-muted-foreground"
             )}

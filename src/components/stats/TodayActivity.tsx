@@ -21,7 +21,7 @@ export function TodayActivity({ activeSeconds, idleSeconds }: TodayActivityProps
     <div className="space-y-3">
       <div className="flex items-center justify-between text-sm">
         <div className="flex items-center gap-2">
-          <span className="text-emerald-500 font-medium uppercase text-xs tracking-wider">Active</span>
+          <span className="text-success font-medium uppercase text-xs tracking-wider">Active</span>
           <span className="font-mono-display font-semibold">{formatDuration(activeSeconds)}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -30,7 +30,7 @@ export function TodayActivity({ activeSeconds, idleSeconds }: TodayActivityProps
         </div>
       </div>
 
-      {/* Brutalist progress bar */}
+      {/* Progress bar */}
       <div className="relative h-4 bg-muted brutalist-border">
         <div
           className="absolute inset-y-0 left-0 bg-primary transition-all duration-300"

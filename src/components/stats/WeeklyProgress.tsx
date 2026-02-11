@@ -70,7 +70,7 @@ export function WeeklyProgress({
       </div>
       <div className={cn(
         "flex items-center gap-1 px-2 py-1 text-xs font-mono-display font-medium",
-        isUp && "bg-emerald-500/20 text-emerald-500",
+        isUp && "bg-success-soft text-success",
         isDown && "bg-destructive/20 text-destructive",
         isSteady && "bg-muted text-muted-foreground"
       )}>

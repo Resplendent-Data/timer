@@ -155,13 +155,13 @@ export function StartTimerModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/60"
+      <div
+        className="absolute inset-0 bg-background/75 backdrop-blur-sm"
         onClick={handleClose}
       />
       
       {/* Modal content */}
-      <Card className="relative z-10 w-full max-w-md mx-4 shadow-xl">
+      <Card className="relative z-10 mx-4 w-full max-w-md border-border bg-card/95 shadow-xl">
         <CardHeader>
           <CardTitle>
             {isManualTimer ? "Start Manual Timer" : "Start Timer"}
@@ -200,7 +200,7 @@ export function StartTimerModal({
               id="tag"
               value={selectedTag}
               onChange={(e) => setSelectedTag(e.target.value)}
-              className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-input/35 px-3 py-2 text-sm shadow-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">{isLoadingTags ? "Loading tags..." : "None"}</option>
               {tags.map((tag) => (
@@ -244,7 +244,7 @@ export function StartTimerModal({
 
           {/* Error message */}
           {error && (
-            <div className="text-sm text-destructive bg-destructive/10 rounded-md p-2">
+            <div className="rounded-lg border border-destructive/60 bg-destructive/10 p-2 text-sm text-destructive">
               {error}
             </div>
           )}

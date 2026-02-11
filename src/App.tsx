@@ -203,22 +203,21 @@ function App() {
 
   return (
     <main className="h-screen w-full flex flex-col bg-background text-foreground">
-      {/* Brutalist Header - Draggable */}
       <header
-        className="sticky top-0 z-10 bg-background pt-7 px-5 pb-4 border-b-2 border-border shrink-0 select-none"
+        className="sticky top-0 z-10 shrink-0 border-b border-border/80 bg-background/95 px-5 pb-4 pt-7 shadow-sm backdrop-blur select-none"
         data-tauri-drag-region
       >
-        <h1 className="font-mono-display text-sm font-semibold tracking-widest uppercase pointer-events-none">
-          Resplendent
+        <h1 className="text-base font-extrabold uppercase tracking-[0.12em] pointer-events-none">
+          Resplendent Timer
         </h1>
-        <p className="text-xs text-muted-foreground mt-0.5 pointer-events-none tracking-wide">
+        <p className="mt-1 text-xs text-muted-foreground pointer-events-none tracking-[0.04em]">
           Auto-stop idle ClickUp timers
         </p>
       </header>
 
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto">
-        <div className="p-4 flex flex-col min-h-full">
+        <div className="flex min-h-full flex-col p-4">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <TabsList className="grid w-full grid-cols-3 mb-4 shrink-0">
               <TabsTrigger value="status">Timer</TabsTrigger>

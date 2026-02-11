@@ -131,9 +131,10 @@ export function FocusChart({ data }: FocusChartProps) {
         {sortedData.map((day, index) => {
           const totalSeconds = day.active_seconds + day.idle_seconds;
           const dayHeightPercent = (totalSeconds / maxTotalSeconds) * 100;
-          const activeRatio = totalSeconds > 0 ? day.active_seconds / totalSeconds : 0;
-          const activeHeightPercent = dayHeightPercent * activeRatio;
-          const idleHeightPercent = dayHeightPercent - activeHeightPercent;
+          const activeFillPercent =
+            totalSeconds > 0 ? (day.active_seconds / totalSeconds) * 100 : 0;
+          const idleFillPercent =
+            totalSeconds > 0 ? (day.idle_seconds / totalSeconds) * 100 : 0;
           const isToday = parseDate(day.date).toDateString() === today;
           const isHovered = hoveredIndex === index;
 
@@ -150,7 +151,7 @@ export function FocusChart({ data }: FocusChartProps) {
               <div className="flex h-20 w-full items-end justify-center">
                 <div
                   className={cn(
-                    "relative w-full max-w-7 brutalist-border bg-muted/20 transition-all duration-150",
+                    "relative w-full max-w-7 overflow-hidden brutalist-border bg-muted/20 transition-all duration-150",
                     isHovered && "scale-x-105",
                     isToday && "border-primary",
                     totalSeconds === 0 && "h-1"
@@ -163,13 +164,17 @@ export function FocusChart({ data }: FocusChartProps) {
                     <>
                       <div
                         className="absolute bottom-0 left-0 w-full bg-primary transition-all duration-150"
-                        style={{ height: `${Math.max(activeHeightPercent, 4)}%` }}
+                        style={{
+                          height: `${activeFillPercent}%`,
+                          minHeight: day.active_seconds > 0 ? "2px" : "0",
+                        }}
                       />
                       <div
                         className="absolute left-0 w-full bg-muted-foreground/40 transition-all duration-150"
                         style={{
-                          bottom: `${Math.max(activeHeightPercent, 4)}%`,
-                          height: `${Math.max(idleHeightPercent, 0)}%`,
+                          bottom: `${activeFillPercent}%`,
+                          height: `${idleFillPercent}%`,
+                          minHeight: day.idle_seconds > 0 ? "2px" : "0",
                         }}
                       />
                     </>
@@ -192,7 +197,7 @@ export function FocusChart({ data }: FocusChartProps) {
       </div>
       
       <p className="text-center text-[10px] uppercase tracking-wider text-muted-foreground">
-        Amber = active, gray = idle
+        Purple = active, gray = idle
       </p>
     </div>
   );

@@ -9,6 +9,15 @@ import { LazyStore } from "@tauri-apps/plugin-store";
 
 // Use LazyStore which handles initialization on first access
 const store = new LazyStore("settings.json");
+export const DEFAULT_WORK_DAYS: number[] = [0, 1, 2, 3, 4];
+
+function normalizeWorkdays(days: number[] | null | undefined): number[] {
+  if (!Array.isArray(days)) return [...DEFAULT_WORK_DAYS];
+  const normalized = Array.from(
+    new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))
+  ).sort((a, b) => a - b);
+  return normalized.length > 0 ? normalized : [...DEFAULT_WORK_DAYS];
+}
 
 /**
  * Widget position for the always-on-top timer widget.
@@ -36,6 +45,12 @@ export interface AppSettings {
   noTimerWarningRepeat: boolean;
   /** Whether to show the always-on-top timer widget */
   widgetEnabled: boolean;
+  /** Workday start in 24h format (HH:MM), local time */
+  workdayStart: string;
+  /** Workday end in 24h format (HH:MM), local time */
+  workdayEnd: string;
+  /** Workdays as 0-6 (Mon-Sun) */
+  workdays: number[];
 }
 
 /**
@@ -64,6 +79,9 @@ export async function getSettings(): Promise<AppSettings | null> {
   const noTimerWarningEnabled = await store.get<boolean>("noTimerWarningEnabled");
   const noTimerWarningMinutes = await store.get<number>("noTimerWarningMinutes");
   const noTimerWarningRepeat = await store.get<boolean>("noTimerWarningRepeat");
+  const workdayStart = await store.get<string>("workdayStart");
+  const workdayEnd = await store.get<string>("workdayEnd");
+  const workdays = await store.get<number[]>("workdays");
 
   // Return null if required fields are not set
   if (!apiKey || !teamId) {
@@ -80,6 +98,9 @@ export async function getSettings(): Promise<AppSettings | null> {
     noTimerWarningMinutes: noTimerWarningMinutes ?? 10,
     noTimerWarningRepeat: noTimerWarningRepeat ?? false,
     widgetEnabled: widgetEnabled ?? false,
+    workdayStart: workdayStart ?? "08:00",
+    workdayEnd: workdayEnd ?? "17:00",
+    workdays: normalizeWorkdays(workdays),
   };
 }
 
@@ -96,6 +117,9 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("noTimerWarningMinutes", settings.noTimerWarningMinutes);
   await store.set("noTimerWarningRepeat", settings.noTimerWarningRepeat);
   await store.set("widgetEnabled", settings.widgetEnabled);
+  await store.set("workdayStart", settings.workdayStart);
+  await store.set("workdayEnd", settings.workdayEnd);
+  await store.set("workdays", normalizeWorkdays(settings.workdays));
   await store.save();
 }
 

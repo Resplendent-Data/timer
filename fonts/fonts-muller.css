@@ -1,0 +1,9 @@
+@font-face {
+  font-family: 'muller';
+  src: url('./muller/Muller-Regular.woff');
+}
+
+@font-face {
+  font-family: 'muller-bold';
+  src: url('./muller/Muller-Bold.woff2');
+}

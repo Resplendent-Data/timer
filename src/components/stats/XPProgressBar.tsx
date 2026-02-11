@@ -35,7 +35,7 @@ export function XPProgressBar({
         </div>
       </div>
       
-      {/* Brutalist progress bar */}
+      {/* Progress bar */}
       <div className="relative h-3 bg-muted brutalist-border">
         <div
           className="absolute inset-y-0 left-0 bg-primary transition-all duration-500"

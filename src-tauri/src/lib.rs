@@ -247,8 +247,13 @@ async fn send_notification_linux(_title: String, _body: String) -> Result<(), St
 
 /// Get productivity stats for the stats screen.
 #[tauri::command]
-async fn get_productivity_stats() -> Result<ProductivityStats, String> {
-    stats::get_productivity_stats().map_err(|e| e.to_string())
+async fn get_productivity_stats(
+    work_start_minutes: Option<i64>,
+    work_end_minutes: Option<i64>,
+    work_days: Option<Vec<i64>>,
+) -> Result<ProductivityStats, String> {
+    stats::get_productivity_stats(work_start_minutes, work_end_minutes, work_days)
+        .map_err(|e| e.to_string())
 }
 
 /// Record a heartbeat from the frontend (called every 30 seconds).

@@ -1,7 +1,7 @@
 /**
  * Widget component for the always-on-top timer display.
  *
- * Brutalist minimal widget showing elapsed time.
+ * Brand-aligned minimal widget showing elapsed time.
  * Features:
  * - Draggable by clicking anywhere
  * - Click opens the main window (only if not dragging)
@@ -178,14 +178,15 @@ export function Widget() {
       className={`
         h-screen w-screen flex items-center justify-center 
         select-none cursor-pointer
-        font-mono text-xs font-bold tabular-nums tracking-tight
-        border-2
+        text-xs font-extrabold tabular-nums tracking-tight uppercase
+        border
+        rounded-lg
         ${isTimerRunning 
-          ? "bg-primary text-primary-foreground border-primary" 
+          ? "bg-primary text-primary-foreground border-primary shadow-[0_0_16px_rgba(161,110,255,0.35)]" 
           : "bg-card text-muted-foreground border-border"
         }
       `}
-      style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}
+      style={{ fontFamily: "Muller, -apple-system, system-ui, sans-serif" }}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
     >
