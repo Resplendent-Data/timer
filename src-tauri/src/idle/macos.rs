@@ -42,19 +42,18 @@ pub fn get_idle_time_secs() -> Result<u64, String> {
         // Note: kIOMainPortDefault is 0 on modern macOS
         let service = IOServiceGetMatchingService(0, matching);
         if service == 0 {
-            return Err("Failed to get IOHIDSystem service. This may require accessibility permissions.".to_string());
+            return Err(
+                "Failed to get IOHIDSystem service. This may require accessibility permissions."
+                    .to_string(),
+            );
         }
 
         // Create the key for HIDIdleTime property
         let key = CFString::new("HIDIdleTime");
 
         // Get the HIDIdleTime property
-        let property = IORegistryEntryCreateCFProperty(
-            service,
-            key.as_concrete_TypeRef(),
-            ptr::null(),
-            0,
-        );
+        let property =
+            IORegistryEntryCreateCFProperty(service, key.as_concrete_TypeRef(), ptr::null(), 0);
 
         // Release the service object
         IOObjectRelease(service);

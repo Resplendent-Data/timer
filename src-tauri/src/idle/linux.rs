@@ -47,7 +47,7 @@ fn is_x11_session() -> bool {
     if let Ok(session_type) = env::var("XDG_SESSION_TYPE") {
         return session_type == "x11";
     }
-    
+
     // Fallback: check if DISPLAY is set (indicates X11 is available)
     env::var("DISPLAY").is_ok()
 }
@@ -206,18 +206,18 @@ fn get_monotonic_time_usec() -> Result<u64, String> {
     use std::mem::MaybeUninit;
 
     let mut ts = MaybeUninit::<libc::timespec>::uninit();
-    
+
     // SAFETY: We're passing a valid pointer to an uninitialized timespec,
     // and clock_gettime will initialize it if successful.
     let ret = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, ts.as_mut_ptr()) };
-    
+
     if ret != 0 {
         return Err("clock_gettime failed".to_string());
     }
 
     // SAFETY: clock_gettime succeeded, so ts is now initialized
     let ts = unsafe { ts.assume_init() };
-    
+
     // Convert to microseconds
     let usec = (ts.tv_sec as u64) * 1_000_000 + (ts.tv_nsec as u64) / 1_000;
     Ok(usec)
@@ -233,8 +233,8 @@ fn get_x11_idle_time() -> Result<u64, String> {
     use x11rb::rust_connection::RustConnection;
 
     // Connect to X11 display
-    let (conn, screen_num) = RustConnection::connect(None)
-        .map_err(|e| format!("X11 connection failed: {}", e))?;
+    let (conn, screen_num) =
+        RustConnection::connect(None).map_err(|e| format!("X11 connection failed: {}", e))?;
 
     // Get the root window of the default screen
     let screen = &conn.setup().roots[screen_num];

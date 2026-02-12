@@ -92,10 +92,7 @@ member='PrepareForShutdown'";
         while let Some(msg_result) = stream.next().await {
             if let Ok(msg) = msg_result {
                 // In zbus 5.x, we need to get the header to access member name
-                let member_name = msg
-                    .header()
-                    .member()
-                    .map(|m| m.as_str().to_string());
+                let member_name = msg.header().member().map(|m| m.as_str().to_string());
 
                 match member_name.as_deref() {
                     Some("PrepareForSleep") => {
@@ -105,7 +102,10 @@ member='PrepareForShutdown'";
                                     "[resplendent] Linux system preparing for sleep - emitting system-sleep event"
                                 );
                                 if let Err(e) = app_handle.emit(SYSTEM_SLEEP_EVENT, ()) {
-                                    eprintln!("[resplendent] Failed to emit system-sleep event: {}", e);
+                                    eprintln!(
+                                        "[resplendent] Failed to emit system-sleep event: {}",
+                                        e
+                                    );
                                 }
                             } else {
                                 println!("[resplendent] Linux system waking from sleep");
@@ -119,7 +119,10 @@ member='PrepareForShutdown'";
                                     "[resplendent] Linux system preparing for shutdown - emitting system-shutdown event"
                                 );
                                 if let Err(e) = app_handle.emit(SYSTEM_SHUTDOWN_EVENT, ()) {
-                                    eprintln!("[resplendent] Failed to emit system-shutdown event: {}", e);
+                                    eprintln!(
+                                        "[resplendent] Failed to emit system-shutdown event: {}",
+                                        e
+                                    );
                                 }
                             } else {
                                 println!("[resplendent] Linux system shutdown cancelled");

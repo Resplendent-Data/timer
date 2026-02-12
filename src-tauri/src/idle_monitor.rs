@@ -42,7 +42,7 @@ mod tests {
         // This test verifies the function doesn't panic
         // Actual idle time may not be available in all environments
         let result = get_idle_time_secs().await;
-        
+
         // In a test environment, we just check it returns something
         // (either Ok with a value or an error message)
         match result {

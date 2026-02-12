@@ -87,7 +87,14 @@ async fn start_manual_timer(
     billable: Option<bool>,
     tags: Option<Vec<String>>,
 ) -> Result<(), String> {
-    clickup::start_manual_timer(api_key, team_id, description, billable.unwrap_or(false), tags).await
+    clickup::start_manual_timer(
+        api_key,
+        team_id,
+        description,
+        billable.unwrap_or(false),
+        tags,
+    )
+    .await
 }
 
 /// Tauri command to check idle time and stop ClickUp timer if needed.
@@ -279,7 +286,14 @@ fn record_idle_event(
     task_id: Option<String>,
     session_duration_secs: i64,
 ) {
-    stats::record_idle_event(started_at, duration_secs, timer_stopped, task_name, task_id, session_duration_secs);
+    stats::record_idle_event(
+        started_at,
+        duration_secs,
+        timer_stopped,
+        task_name,
+        task_id,
+        session_duration_secs,
+    );
 }
 
 /// Create the always-on-top widget window.
@@ -299,14 +313,18 @@ async fn create_widget_window(
         return Ok(());
     }
 
-    let mut builder = WebviewWindowBuilder::new(&app, "widget", tauri::WebviewUrl::App("/widget.html".into()))
-        .title("Timer Widget")
-        .inner_size(120.0, 36.0)
-        .decorations(false)
-        .always_on_top(true)
-        .resizable(false)
-        .skip_taskbar(true)
-        .visible(true);
+    let mut builder = WebviewWindowBuilder::new(
+        &app,
+        "widget",
+        tauri::WebviewUrl::App("/widget.html".into()),
+    )
+    .title("Timer Widget")
+    .inner_size(120.0, 36.0)
+    .decorations(false)
+    .always_on_top(true)
+    .resizable(false)
+    .skip_taskbar(true)
+    .visible(true);
 
     // Set position if provided and reasonable (within typical screen bounds)
     // Ignore positions that are likely off-screen
@@ -349,11 +367,7 @@ async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Save the widget position (called from frontend when widget is moved).
 #[tauri::command]
-async fn save_widget_position(
-    app: tauri::AppHandle,
-    x: i32,
-    y: i32,
-) -> Result<(), String> {
+async fn save_widget_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
     // Emit event to frontend to save position in store
     app.emit("save-widget-position", (x, y))
         .map_err(|e| e.to_string())?;
@@ -397,14 +411,17 @@ pub fn run() {
             }
 
             // Create system tray menu items
-            let timer_display =
-                MenuItem::with_id(app, "timer_display", "No timer running", false, None::<&str>)?;
+            let timer_display = MenuItem::with_id(
+                app,
+                "timer_display",
+                "No timer running",
+                false,
+                None::<&str>,
+            )?;
             let start_item =
                 MenuItem::with_id(app, "start_timer", "Start Timer...", true, None::<&str>)?;
-            let stop_item =
-                MenuItem::with_id(app, "stop_timer", "Stop Timer", true, None::<&str>)?;
-            let show_item =
-                MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+            let stop_item = MenuItem::with_id(app, "stop_timer", "Stop Timer", true, None::<&str>)?;
+            let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
             // Build menu with separators

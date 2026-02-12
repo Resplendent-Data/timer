@@ -315,13 +315,9 @@ fn build_work_hours_condition_sql(work_start_minutes: i64, work_end_minutes: i64
     if work_start_minutes == work_end_minutes {
         "1 = 1".to_string()
     } else if work_start_minutes < work_end_minutes {
-        format!(
-            "{minute_of_day} >= {work_start_minutes} AND {minute_of_day} < {work_end_minutes}"
-        )
+        format!("{minute_of_day} >= {work_start_minutes} AND {minute_of_day} < {work_end_minutes}")
     } else {
-        format!(
-            "{minute_of_day} >= {work_start_minutes} OR {minute_of_day} < {work_end_minutes}"
-        )
+        format!("{minute_of_day} >= {work_start_minutes} OR {minute_of_day} < {work_end_minutes}")
     }
 }
 
@@ -348,11 +344,10 @@ fn get_day_activity_for_work_hours(
          WHERE date(datetime(recorded_at, 'unixepoch', 'localtime')) = ?2"
     );
 
-    let (heartbeat_count, filtered_active, filtered_idle): (i64, i64, i64) = conn.query_row(
-        &sql,
-        params![HEARTBEAT_INTERVAL_SECS, date],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    )?;
+    let (heartbeat_count, filtered_active, filtered_idle): (i64, i64, i64) =
+        conn.query_row(&sql, params![HEARTBEAT_INTERVAL_SECS, date], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
 
     if heartbeat_count > 0 {
         return Ok((filtered_active, filtered_idle));
@@ -428,14 +423,13 @@ fn get_total_active_seconds_for_work_hours(
 
     let mut total_active = 0;
     for date in dates {
-        let (active, _) =
-            get_day_activity_for_work_hours(
-                conn,
-                &date,
-                work_start_minutes,
-                work_end_minutes,
-                work_days,
-            )?;
+        let (active, _) = get_day_activity_for_work_hours(
+            conn,
+            &date,
+            work_start_minutes,
+            work_end_minutes,
+            work_days,
+        )?;
         total_active += active;
     }
 
@@ -597,13 +591,12 @@ pub fn get_productivity_stats(
     };
 
     // XP = total active minutes across all time (work-hours-aware)
-    let total_active_seconds =
-        get_total_active_seconds_for_work_hours(
-            &conn,
-            work_start_minutes,
-            work_end_minutes,
-            &work_days,
-        )?;
+    let total_active_seconds = get_total_active_seconds_for_work_hours(
+        &conn,
+        work_start_minutes,
+        work_end_minutes,
+        &work_days,
+    )?;
 
     let total_xp = total_active_seconds / 60; // 1 XP per active minute
     let current_level = calculate_level(total_xp);
