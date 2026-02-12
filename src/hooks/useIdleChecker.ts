@@ -19,6 +19,10 @@ interface IdleCheckResult {
   stopped: boolean;
   task_name: string | null;
   task_id: string | null;
+  description: string | null;
+  is_manual: boolean;
+  tags: TimeEntryTag[];
+  billable: boolean;
   idle_duration: number;
   error: string | null;
 }
@@ -70,6 +74,14 @@ export interface IdleStatus {
   lastStoppedTaskName: string | null;
   /** Last stopped task ID (for resume functionality) */
   lastStoppedTaskId: string | null;
+  /** Whether the last stopped timer was manual */
+  lastStoppedTimerIsManual: boolean;
+  /** Description of the last stopped timer (manual timers) */
+  lastStoppedTimerDescription: string | null;
+  /** Tags from the last stopped timer */
+  lastStoppedTimerTags: TimeEntryTag[];
+  /** Whether the last stopped timer was billable */
+  lastStoppedTimerBillable: boolean;
   /** Error message if something went wrong */
   error: string | null;
   /** Last time we sent a "no timer" warning */
@@ -153,6 +165,8 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
   const trayIntervalRef = useRef<number | null>(null);
   /** Set of time entry IDs we've already added the rt tag to (to avoid duplicate calls) */
   const taggedTimerIdsRef = useRef<Set<string>>(new Set());
+  /** Most recent running timer seen, used to capture manual stop metadata */
+  const lastRunningTimerRef = useRef<RunningTimerInfo | null>(null);
 
   const [status, setStatus] = useState<IdleStatus>({
     isRunning: false,
@@ -168,6 +182,10 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     lastStoppedAt: null,
     lastStoppedTaskName: null,
     lastStoppedTaskId: null,
+    lastStoppedTimerIsManual: false,
+    lastStoppedTimerDescription: null,
+    lastStoppedTimerTags: [],
+    lastStoppedTimerBillable: false,
     error: null,
     lastNoTimerWarningAt: null,
     refresh: async () => {},
@@ -204,18 +222,26 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
       }));
 
       // If a timer was stopped, show notification and update state
-      if (result.stopped && result.task_name) {
+      if (result.stopped) {
+        const stoppedName =
+          result.task_name ||
+          result.description?.trim() ||
+          (result.is_manual ? "Manual Timer" : "Timer");
         const idleMinutes = Math.floor(result.idle_duration / 60);
         await sendNotification({
           title: "Timer Stopped",
-          body: `Timer stopped due to inactivity on "${result.task_name}" (idle for ${idleMinutes} minutes)`,
+          body: `Timer stopped due to inactivity on "${stoppedName}" (idle for ${idleMinutes} minutes)`,
         });
 
         setStatus((prev) => ({
           ...prev,
           lastStoppedAt: new Date(),
-          lastStoppedTaskName: result.task_name,
+          lastStoppedTaskName: stoppedName,
           lastStoppedTaskId: result.task_id,
+          lastStoppedTimerIsManual: result.is_manual,
+          lastStoppedTimerDescription: result.description,
+          lastStoppedTimerTags: result.tags,
+          lastStoppedTimerBillable: result.billable,
           runningTimerId: null,
           runningTaskName: null,
           runningTaskId: null,
@@ -225,6 +251,7 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           runningTimerTags: [],
           runningTimerBillable: false,
         }));
+        lastRunningTimerRef.current = null;
       }
 
       // Also fetch current running timer info for display
@@ -241,6 +268,8 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           const hasRunningTimer = timerInfo !== null;
 
           if (hasRunningTimer) {
+            lastRunningTimerRef.current = timerInfo;
+
             // Timer is running - update lastTimerSeenAt and reset warning state
             lastTimerSeenAtRef.current = Date.now();
             lastNoTimerWarningAtRef.current = null;
@@ -284,6 +313,22 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           } else {
             // No timer running - reset the last added task ID so we can add it again later
             lastAddedTaskIdRef.current = null;
+
+            // Detect timer stop events (e.g., manual stop button) and preserve resume metadata.
+            const lastRunningTimer = lastRunningTimerRef.current;
+            if (lastRunningTimer) {
+              setStatus((prev) => ({
+                ...prev,
+                lastStoppedAt: new Date(),
+                lastStoppedTaskName: lastRunningTimer.name,
+                lastStoppedTaskId: lastRunningTimer.task_id,
+                lastStoppedTimerIsManual: lastRunningTimer.is_manual,
+                lastStoppedTimerDescription: lastRunningTimer.description,
+                lastStoppedTimerTags: lastRunningTimer.tags,
+                lastStoppedTimerBillable: lastRunningTimer.billable,
+              }));
+              lastRunningTimerRef.current = null;
+            }
           }
 
           setStatus((prev) => ({
@@ -423,6 +468,10 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           lastStoppedAt: new Date(),
           lastStoppedTaskName: timerInfo.name,
           lastStoppedTaskId: timerInfo.task_id,
+          lastStoppedTimerIsManual: timerInfo.is_manual,
+          lastStoppedTimerDescription: timerInfo.description,
+          lastStoppedTimerTags: timerInfo.tags,
+          lastStoppedTimerBillable: timerInfo.billable,
           runningTimerId: null,
           runningTaskName: null,
           runningTaskId: null,

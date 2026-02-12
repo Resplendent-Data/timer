@@ -16,6 +16,17 @@ pub struct IdleCheckResult {
     pub task_name: Option<String>,
     /// ID of the task that was stopped (for resume functionality)
     pub task_id: Option<String>,
+    /// Description of the stopped time entry (for manual timers)
+    pub description: Option<String>,
+    /// Whether the stopped timer was manual (no task attached)
+    #[serde(default)]
+    pub is_manual: bool,
+    /// Tags from the stopped time entry (used to preserve tags on resume)
+    #[serde(default)]
+    pub tags: Vec<TimeEntryTag>,
+    /// Whether the stopped time entry was billable
+    #[serde(default)]
+    pub billable: bool,
     /// Current idle duration in seconds
     pub idle_duration: u64,
     /// Error message if something went wrong (but didn't prevent execution)
@@ -767,6 +778,10 @@ pub async fn check_and_stop_timer_impl(
             stopped: false,
             task_name: None,
             task_id: None,
+            description: None,
+            is_manual: false,
+            tags: vec![],
+            billable: false,
             idle_duration: idle_secs,
             error: None,
         });
@@ -780,6 +795,14 @@ pub async fn check_and_stop_timer_impl(
         if entry.is_running() {
             let task_name = entry.display_name();
             let task_id = entry.task_id();
+            let description = if entry.description.is_empty() {
+                None
+            } else {
+                Some(entry.description.clone())
+            };
+            let is_manual = entry.task.is_none();
+            let tags = entry.tags.clone();
+            let billable = entry.billable;
             let session_duration_secs = session_duration_secs(&entry);
 
             // Stop the running timer
@@ -811,6 +834,10 @@ pub async fn check_and_stop_timer_impl(
                     stopped: false,
                     task_name: Some(task_name),
                     task_id,
+                    description,
+                    is_manual,
+                    tags,
+                    billable,
                     idle_duration: idle_secs,
                     error: Some(format!("Failed to stop timer ({}): {}", status, body)),
                 });
@@ -832,6 +859,10 @@ pub async fn check_and_stop_timer_impl(
                 stopped: true,
                 task_name: Some(task_name),
                 task_id,
+                description,
+                is_manual,
+                tags,
+                billable,
                 idle_duration: idle_secs,
                 error: None,
             });
@@ -843,6 +874,10 @@ pub async fn check_and_stop_timer_impl(
         stopped: false,
         task_name: None,
         task_id: None,
+        description: None,
+        is_manual: false,
+        tags: vec![],
+        billable: false,
         idle_duration: idle_secs,
         error: None,
     })
@@ -969,6 +1004,10 @@ mod tests {
             stopped: true,
             task_name: Some("Test Task".to_string()),
             task_id: Some("abc123".to_string()),
+            description: None,
+            is_manual: false,
+            tags: vec![],
+            billable: false,
             idle_duration: 600,
             error: None,
         };
@@ -977,6 +1016,8 @@ mod tests {
         assert!(json.contains("\"stopped\":true"));
         assert!(json.contains("\"task_name\":\"Test Task\""));
         assert!(json.contains("\"task_id\":\"abc123\""));
+        assert!(json.contains("\"is_manual\":false"));
+        assert!(json.contains("\"tags\":[]"));
         assert!(json.contains("\"idle_duration\":600"));
     }
 

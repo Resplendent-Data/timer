@@ -163,8 +163,8 @@ export function TimerControls({ status }: TimerControlsProps) {
     }
   }, [selectedIndex]);
 
-  // Quick start timer (no modal) - used for Resume and Shift+click
-  const quickStartTimer = useCallback(
+  // Quick start task timer (no modal) - used for Resume and Shift+click
+  const quickStartTaskTimer = useCallback(
     async (taskId: string, taskName: string, projectPath?: string) => {
       setIsProcessing(true);
       setError(null);
@@ -182,6 +182,44 @@ export function TimerControls({ status }: TimerControlsProps) {
         // Add to recent tasks
         await addRecentTask({ id: taskId, name: taskName, projectPath });
         setRecentTasks(await getRecentTasks());
+
+        // Clear search and refresh status
+        setSearchQuery("");
+        setSearchResults([]);
+        setSelectedIndex(-1);
+        await status.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [status]
+  );
+
+  // Quick start manual timer (no modal) - used for Resume
+  const quickStartManualTimer = useCallback(
+    async (
+      description: string | null,
+      tags: TimeEntryTag[],
+      billable: boolean
+    ) => {
+      setIsProcessing(true);
+      setError(null);
+
+      try {
+        const settings = await getSettings();
+        if (!settings) throw new Error("Settings not configured");
+
+        const tagNames = Array.from(new Set(tags.map((tag) => tag.name)));
+
+        await invoke("start_manual_timer", {
+          apiKey: settings.clickupApiKey,
+          teamId: settings.clickupTeamId,
+          description: description?.trim() || null,
+          billable,
+          tags: tagNames.length > 0 ? tagNames : undefined,
+        });
 
         // Clear search and refresh status
         setSearchQuery("");
@@ -223,14 +261,14 @@ export function TimerControls({ status }: TimerControlsProps) {
       
       if (event.shiftKey) {
         // Quick start (no modal)
-        quickStartTimer(task.id, task.name, projectPath);
+        quickStartTaskTimer(task.id, task.name, projectPath);
       } else {
         // Open modal with task
         setModalTask({ id: task.id, name: task.name, projectPath });
         setModalOpen(true);
       }
     },
-    [quickStartTimer]
+    [quickStartTaskTimer]
   );
 
   // Handle click on recent task - opens modal unless Shift is held
@@ -238,24 +276,39 @@ export function TimerControls({ status }: TimerControlsProps) {
     (task: RecentTask, event: React.MouseEvent) => {
       if (event.shiftKey) {
         // Quick start (no modal)
-        quickStartTimer(task.id, task.name, task.projectPath);
+        quickStartTaskTimer(task.id, task.name, task.projectPath);
       } else {
         // Open modal with task
         setModalTask({ id: task.id, name: task.name, projectPath: task.projectPath });
         setModalOpen(true);
       }
     },
-    [quickStartTimer]
+    [quickStartTaskTimer]
   );
 
   // Resume always does quick start (no modal)
   const handleResumeTimer = useCallback(async () => {
+    if (status.lastStoppedTimerIsManual) {
+      await quickStartManualTimer(
+        status.lastStoppedTimerDescription,
+        status.lastStoppedTimerTags,
+        status.lastStoppedTimerBillable
+      );
+      return;
+    }
+
     if (!status.lastStoppedTaskId || !status.lastStoppedTaskName) return;
-    await quickStartTimer(
-      status.lastStoppedTaskId,
-      status.lastStoppedTaskName
-    );
-  }, [status.lastStoppedTaskId, status.lastStoppedTaskName, quickStartTimer]);
+    await quickStartTaskTimer(status.lastStoppedTaskId, status.lastStoppedTaskName);
+  }, [
+    status.lastStoppedTaskId,
+    status.lastStoppedTaskName,
+    status.lastStoppedTimerBillable,
+    status.lastStoppedTimerDescription,
+    status.lastStoppedTimerIsManual,
+    status.lastStoppedTimerTags,
+    quickStartTaskTimer,
+    quickStartManualTimer,
+  ]);
 
   // Open manual timer modal
   const handleStartManualTimer = useCallback(() => {
@@ -306,7 +359,7 @@ export function TimerControls({ status }: TimerControlsProps) {
             const projectPath = buildProjectPath(task);
             if (e.shiftKey) {
               // Shift+Enter = quick start
-              quickStartTimer(task.id, task.name, projectPath);
+              quickStartTaskTimer(task.id, task.name, projectPath);
             } else {
               // Enter = open modal
               setModalTask({ id: task.id, name: task.name, projectPath });
@@ -322,7 +375,7 @@ export function TimerControls({ status }: TimerControlsProps) {
           break;
       }
     },
-    [searchResults, selectedIndex, quickStartTimer]
+    [searchResults, selectedIndex, quickStartTaskTimer]
   );
 
   const handleClearSearch = useCallback(() => {
@@ -367,7 +420,8 @@ export function TimerControls({ status }: TimerControlsProps) {
       />
 
       {/* Resume last stopped timer */}
-      {status.lastStoppedTaskId && status.lastStoppedTaskName && (
+      {status.lastStoppedTaskName &&
+        (status.lastStoppedTaskId || status.lastStoppedTimerIsManual) && (
         <Button
           variant="secondary"
           className="h-auto w-full justify-start rounded-lg border border-border py-3 text-left"
