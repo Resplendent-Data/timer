@@ -40,6 +40,7 @@ export function Settings({ onSave }: SettingsProps) {
     noTimerWarningEnabled: true,
     noTimerWarningMinutes: 10,
     noTimerWarningRepeat: false,
+    meetingDetectionEnabled: false,
     widgetEnabled: false,
     workdayStart: "08:00",
     workdayEnd: "17:00",
@@ -292,6 +293,32 @@ export function Settings({ onSave }: SettingsProps) {
             </div>
           </>
         )}
+      </div>
+
+      {/* Meeting Mode Section */}
+      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
+        <div className="brutalist-label">Meeting Mode</div>
+
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label htmlFor="meetingDetectionEnabled" className="text-sm">
+              Detect meetings and prompt
+            </Label>
+            <p className="text-[10px] text-muted-foreground">
+              macOS-only v1. Uses foreground app/tab title matching.
+            </p>
+          </div>
+          <Switch
+            id="meetingDetectionEnabled"
+            checked={settings.meetingDetectionEnabled}
+            onCheckedChange={(checked) =>
+              setSettings({
+                ...settings,
+                meetingDetectionEnabled: checked,
+              })
+            }
+          />
+        </div>
       </div>
 
       {/* Display Section */}

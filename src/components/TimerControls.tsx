@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   getSettings,
   getRecentTasks,
@@ -44,6 +45,15 @@ interface TaskSearchResult {
   tags: TaskTag[];
 }
 
+interface MeetingResumePayload {
+  kind: "task" | "manual";
+  task_id: string | null;
+  task_name: string | null;
+  description: string | null;
+  tags: string[];
+  billable: boolean;
+}
+
 interface TimerControlsProps {
   status: IdleStatus;
 }
@@ -72,7 +82,13 @@ export function TimerControls({ status }: TimerControlsProps) {
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTask, setModalTask] = useState<TaskInfo | null>(null);
+  const [manualPrefill, setManualPrefill] = useState<{
+    description?: string;
+    tag?: string;
+  } | null>(null);
   const [cachedTags, setCachedTags] = useState<TimeEntryTag[] | null>(null);
+  const [meetingResumePayload, setMeetingResumePayload] =
+    useState<MeetingResumePayload | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -103,6 +119,50 @@ export function TimerControls({ status }: TimerControlsProps) {
       });
     }
   }, [status.runningTaskName]);
+
+  // Listen for meeting-mode events triggered by notification actions.
+  useEffect(() => {
+    let unlistenOpenMeeting: (() => void) | null = null;
+    let unlistenMeetingResume: (() => void) | null = null;
+
+    const setup = async () => {
+      unlistenOpenMeeting = await listen("open-meeting-modal", async () => {
+        setModalTask(null);
+        setManualPrefill({ description: "meeting", tag: "meeting" });
+        setModalOpen(true);
+
+        try {
+          const settings = await getSettings();
+          if (!settings) return;
+          await invoke("ensure_meeting_tag", {
+            apiKey: settings.clickupApiKey,
+            teamId: settings.clickupTeamId,
+          });
+        } catch (error) {
+          console.debug("[TimerControls] Failed to ensure meeting tag:", error);
+        }
+      });
+
+      unlistenMeetingResume = await listen<MeetingResumePayload | null>(
+        "show-meeting-resume",
+        (event) => {
+          if (!event.payload) return;
+          setMeetingResumePayload(event.payload);
+        }
+      );
+    };
+
+    setup();
+
+    return () => {
+      if (unlistenOpenMeeting) {
+        unlistenOpenMeeting();
+      }
+      if (unlistenMeetingResume) {
+        unlistenMeetingResume();
+      }
+    };
+  }, []);
 
   // Debounced search effect
   useEffect(() => {
@@ -182,11 +242,15 @@ export function TimerControls({ status }: TimerControlsProps) {
         // Add to recent tasks
         await addRecentTask({ id: taskId, name: taskName, projectPath });
         setRecentTasks(await getRecentTasks());
+        setMeetingResumePayload(null);
+        setManualPrefill(null);
 
         // Clear search and refresh status
         setSearchQuery("");
         setSearchResults([]);
         setSelectedIndex(-1);
+        setMeetingResumePayload(null);
+        setManualPrefill(null);
         await status.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -242,6 +306,8 @@ export function TimerControls({ status }: TimerControlsProps) {
       setSearchQuery("");
       setSearchResults([]);
       setSelectedIndex(-1);
+      setManualPrefill(null);
+      setMeetingResumePayload(null);
 
       // If it was a task timer, add to recent tasks
       if (task) {
@@ -264,6 +330,7 @@ export function TimerControls({ status }: TimerControlsProps) {
         quickStartTaskTimer(task.id, task.name, projectPath);
       } else {
         // Open modal with task
+        setManualPrefill(null);
         setModalTask({ id: task.id, name: task.name, projectPath });
         setModalOpen(true);
       }
@@ -279,6 +346,7 @@ export function TimerControls({ status }: TimerControlsProps) {
         quickStartTaskTimer(task.id, task.name, task.projectPath);
       } else {
         // Open modal with task
+        setManualPrefill(null);
         setModalTask({ id: task.id, name: task.name, projectPath: task.projectPath });
         setModalOpen(true);
       }
@@ -313,8 +381,75 @@ export function TimerControls({ status }: TimerControlsProps) {
   // Open manual timer modal
   const handleStartManualTimer = useCallback(() => {
     setModalTask(null); // null = manual timer
+    setManualPrefill(null);
     setModalOpen(true);
   }, []);
+
+  const handleModalOpenChange = useCallback((open: boolean) => {
+    setModalOpen(open);
+    if (!open) {
+      setManualPrefill(null);
+    }
+  }, []);
+
+  const handleResumeAfterMeeting = useCallback(async () => {
+    if (!meetingResumePayload) return;
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const settings = await getSettings();
+      if (!settings) throw new Error("Settings not configured");
+
+      // If a timer is still running, stop it first (typically the meeting timer).
+      if (status.runningTaskName) {
+        await invoke("stop_timer", {
+          apiKey: settings.clickupApiKey,
+          teamId: settings.clickupTeamId,
+        });
+      }
+
+      const tagNames = Array.from(new Set(meetingResumePayload.tags));
+
+      if (meetingResumePayload.kind === "task") {
+        if (!meetingResumePayload.task_id) {
+          throw new Error("Missing previous task ID");
+        }
+
+        await invoke("start_timer", {
+          apiKey: settings.clickupApiKey,
+          teamId: settings.clickupTeamId,
+          taskId: meetingResumePayload.task_id,
+          billable: meetingResumePayload.billable,
+          tags: tagNames.length > 0 ? tagNames : undefined,
+        });
+
+        if (meetingResumePayload.task_name) {
+          await addRecentTask({
+            id: meetingResumePayload.task_id,
+            name: meetingResumePayload.task_name,
+          });
+          setRecentTasks(await getRecentTasks());
+        }
+      } else {
+        await invoke("start_manual_timer", {
+          apiKey: settings.clickupApiKey,
+          teamId: settings.clickupTeamId,
+          description: meetingResumePayload.description?.trim() || null,
+          billable: meetingResumePayload.billable,
+          tags: tagNames.length > 0 ? tagNames : undefined,
+        });
+      }
+
+      setMeetingResumePayload(null);
+      await status.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [meetingResumePayload, status.runningTaskName, status]);
 
   const handleStopTimer = useCallback(async () => {
     setIsProcessing(true);
@@ -386,10 +521,40 @@ export function TimerControls({ status }: TimerControlsProps) {
     searchInputRef.current?.focus();
   }, []);
 
+  const meetingResumeBanner = meetingResumePayload ? (
+    <div className="rounded-lg border border-primary/40 bg-primary/10 p-3">
+      <p className="text-xs font-medium">
+        Meeting ended. Resume your previous timer?
+      </p>
+      <div className="mt-2 flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 px-3 text-xs uppercase tracking-wider"
+          onClick={handleResumeAfterMeeting}
+          disabled={isProcessing}
+        >
+          {isProcessing ? "Resuming..." : "Resume Previous"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-3 text-xs uppercase tracking-wider"
+          onClick={() => setMeetingResumePayload(null)}
+          disabled={isProcessing}
+        >
+          Dismiss
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
   // If timer is running, show stop button only
   if (status.runningTaskName) {
     return (
       <div className="space-y-3">
+        {meetingResumeBanner}
         {error && (
           <div className="rounded-lg border border-destructive/60 bg-destructive/10 p-3">
             <p className="text-sm text-destructive">{error}</p>
@@ -412,12 +577,16 @@ export function TimerControls({ status }: TimerControlsProps) {
       {/* Start Timer Modal */}
       <StartTimerModal
         open={modalOpen}
-        onOpenChange={setModalOpen}
+        onOpenChange={handleModalOpenChange}
         task={modalTask}
+        initialDescription={modalTask === null ? manualPrefill?.description : undefined}
+        initialTag={modalTask === null ? manualPrefill?.tag : undefined}
         cachedTags={cachedTags}
         onTagsFetched={setCachedTags}
         onTimerStarted={handleTimerStarted}
       />
+
+      {meetingResumeBanner}
 
       {/* Resume last stopped timer */}
       {status.lastStoppedTaskName &&

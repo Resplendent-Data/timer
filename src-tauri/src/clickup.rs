@@ -455,6 +455,64 @@ pub async fn get_time_entry_tags(
 
 /// The name of the tag used to identify time entries tracked by Resplendent Timer
 pub const RT_TAG_NAME: &str = "rt";
+/// The name of the manual meeting tag used by meeting detection flow
+pub const MEETING_TAG_NAME: &str = "meeting";
+
+const RT_TAG_BG: &str = "#7b68ee";
+const RT_TAG_FG: &str = "#ffffff";
+const MEETING_TAG_BG: &str = "#2563eb";
+const MEETING_TAG_FG: &str = "#ffffff";
+
+async fn ensure_time_entry_tag_exists(
+    api_key: String,
+    team_id: String,
+    tag_name: &str,
+    tag_bg: &str,
+    tag_fg: &str,
+) -> Result<bool, String> {
+    let existing_tags = get_time_entry_tags(api_key.clone(), team_id.clone()).await?;
+
+    if existing_tags
+        .iter()
+        .any(|t| t.name.eq_ignore_ascii_case(tag_name))
+    {
+        return Ok(false);
+    }
+
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.clickup.com/api/v2/team/{}/time_entries/tags",
+        team_id
+    );
+
+    let body = serde_json::json!({
+        "tag": {
+            "name": tag_name,
+            "tag_bg": tag_bg,
+            "tag_fg": tag_fg
+        }
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", &api_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to create {} tag: {}", tag_name, e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "ClickUp API error creating {} tag ({}): {}",
+            tag_name, status, body
+        ));
+    }
+
+    Ok(true)
+}
 
 /// Ensure the "rt" tag exists in the workspace for identifying Resplendent Timer entries.
 ///
@@ -469,47 +527,19 @@ pub const RT_TAG_NAME: &str = "rt";
 ///
 /// Ok(true) if tag was created, Ok(false) if it already existed
 pub async fn ensure_rt_tag_exists(api_key: String, team_id: String) -> Result<bool, String> {
-    // First check if the tag already exists
-    let existing_tags = get_time_entry_tags(api_key.clone(), team_id.clone()).await?;
+    ensure_time_entry_tag_exists(api_key, team_id, RT_TAG_NAME, RT_TAG_BG, RT_TAG_FG).await
+}
 
-    if existing_tags.iter().any(|t| t.name == RT_TAG_NAME) {
-        return Ok(false); // Tag already exists
-    }
-
-    // Create the tag with a distinctive purple color
-    let client = reqwest::Client::new();
-    let url = format!(
-        "https://api.clickup.com/api/v2/team/{}/time_entries/tags",
-        team_id
-    );
-
-    let body = serde_json::json!({
-        "tag": {
-            "name": RT_TAG_NAME,
-            "tag_bg": "#7b68ee",  // Medium slate blue - distinctive but not jarring
-            "tag_fg": "#ffffff"
-        }
-    });
-
-    let response = client
-        .post(&url)
-        .header("Authorization", &api_key)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to create rt tag: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "ClickUp API error creating rt tag ({}): {}",
-            status, body
-        ));
-    }
-
-    Ok(true)
+/// Ensure the "meeting" time-entry tag exists.
+pub async fn ensure_meeting_tag_exists(api_key: String, team_id: String) -> Result<bool, String> {
+    ensure_time_entry_tag_exists(
+        api_key,
+        team_id,
+        MEETING_TAG_NAME,
+        MEETING_TAG_BG,
+        MEETING_TAG_FG,
+    )
+    .await
 }
 
 /// Add the "rt" tag to an existing time entry.
@@ -551,8 +581,8 @@ pub async fn add_rt_tag_to_time_entry(
         "time_entry_ids": [time_entry_id],
         "tags": [{
             "name": RT_TAG_NAME,
-            "tag_bg": "#7b68ee",
-            "tag_fg": "#ffffff"
+            "tag_bg": RT_TAG_BG,
+            "tag_fg": RT_TAG_FG
         }]
     });
 
@@ -594,8 +624,8 @@ fn build_tag_objects_with_rt(tags: Option<Vec<String>>) -> Vec<serde_json::Value
                 // Use distinctive purple color for rt tag
                 serde_json::json!({
                     "name": RT_TAG_NAME,
-                    "tag_bg": "#7b68ee",
-                    "tag_fg": "#ffffff"
+                    "tag_bg": RT_TAG_BG,
+                    "tag_fg": RT_TAG_FG
                 })
             } else {
                 // For other tags, just use name (ClickUp will use existing tag's colors)

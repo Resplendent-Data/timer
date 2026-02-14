@@ -43,6 +43,8 @@ export interface AppSettings {
   noTimerWarningMinutes: number;
   /** Whether to repeat the warning at intervals (vs once per session) */
   noTimerWarningRepeat: boolean;
+  /** Whether to detect meetings and prompt for meeting-mode timer */
+  meetingDetectionEnabled: boolean;
   /** Whether to show the always-on-top timer widget */
   widgetEnabled: boolean;
   /** Workday start in 24h format (HH:MM), local time */
@@ -79,6 +81,7 @@ export async function getSettings(): Promise<AppSettings | null> {
   const noTimerWarningEnabled = await store.get<boolean>("noTimerWarningEnabled");
   const noTimerWarningMinutes = await store.get<number>("noTimerWarningMinutes");
   const noTimerWarningRepeat = await store.get<boolean>("noTimerWarningRepeat");
+  const meetingDetectionEnabled = await store.get<boolean>("meetingDetectionEnabled");
   const workdayStart = await store.get<string>("workdayStart");
   const workdayEnd = await store.get<string>("workdayEnd");
   const workdays = await store.get<number[]>("workdays");
@@ -97,6 +100,7 @@ export async function getSettings(): Promise<AppSettings | null> {
     noTimerWarningEnabled: noTimerWarningEnabled ?? true,
     noTimerWarningMinutes: noTimerWarningMinutes ?? 10,
     noTimerWarningRepeat: noTimerWarningRepeat ?? false,
+    meetingDetectionEnabled: meetingDetectionEnabled ?? false,
     widgetEnabled: widgetEnabled ?? false,
     workdayStart: workdayStart ?? "08:00",
     workdayEnd: workdayEnd ?? "17:00",
@@ -116,6 +120,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("noTimerWarningEnabled", settings.noTimerWarningEnabled);
   await store.set("noTimerWarningMinutes", settings.noTimerWarningMinutes);
   await store.set("noTimerWarningRepeat", settings.noTimerWarningRepeat);
+  await store.set("meetingDetectionEnabled", settings.meetingDetectionEnabled);
   await store.set("widgetEnabled", settings.widgetEnabled);
   await store.set("workdayStart", settings.workdayStart);
   await store.set("workdayEnd", settings.workdayEnd);

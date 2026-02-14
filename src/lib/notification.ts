@@ -18,6 +18,7 @@ import {
 interface NotificationOptions {
   title: string;
   body: string;
+  extra?: Record<string, unknown>;
 }
 
 /**
@@ -74,6 +75,7 @@ export async function sendNotification(
     tauriSendNotification({
       title: options.title,
       body: options.body,
+      extra: options.extra,
     });
   }
 }

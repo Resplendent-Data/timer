@@ -32,6 +32,10 @@ interface StartTimerModalProps {
   onOpenChange: (open: boolean) => void;
   /** Task to start timer for (null = manual timer) */
   task: TaskInfo | null;
+  /** Optional initial description for manual timer mode */
+  initialDescription?: string;
+  /** Optional initial tag for manual timer mode */
+  initialTag?: string;
   /** Cached tags from workspace (to avoid refetching) */
   cachedTags: TimeEntryTag[] | null;
   /** Callback to update cached tags */
@@ -44,6 +48,8 @@ export function StartTimerModal({
   open,
   onOpenChange,
   task,
+  initialDescription,
+  initialTag,
   cachedTags,
   onTagsFetched,
   onTimerStarted,
@@ -70,12 +76,17 @@ export function StartTimerModal({
   // Reset form when modal opens
   useEffect(() => {
     if (open) {
-      setDescription("");
-      setSelectedTag("");
+      if (isManualTimer) {
+        setDescription(initialDescription ?? "");
+        setSelectedTag(initialTag ?? "");
+      } else {
+        setDescription("");
+        setSelectedTag("");
+      }
       setBillable(false);
       setError(null);
     }
-  }, [open]);
+  }, [open, isManualTimer, initialDescription, initialTag]);
 
   const fetchTags = async () => {
     setIsLoadingTags(true);
@@ -203,6 +214,9 @@ export function StartTimerModal({
               className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-input/35 px-3 py-2 text-sm shadow-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">{isLoadingTags ? "Loading tags..." : "None"}</option>
+              {selectedTag && !tags.some((tag) => tag.name === selectedTag) && (
+                <option value={selectedTag}>{selectedTag}</option>
+              )}
               {tags.map((tag) => (
                 <option key={tag.name} value={tag.name}>
                   {tag.name}

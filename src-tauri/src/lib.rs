@@ -6,11 +6,13 @@
 mod clickup;
 mod idle;
 mod idle_monitor;
+mod meeting_detection;
 mod stats;
 
 use std::sync::Mutex;
 
 use clickup::{IdleCheckResult, RunningTimerInfo, TaskSearchResult, TimeEntryTag};
+use meeting_detection::MeetingPresence;
 use stats::ProductivityStats;
 use tauri::{
     include_image,
@@ -175,6 +177,18 @@ async fn get_running_timer_info(
 #[tauri::command]
 async fn ensure_rt_tag(api_key: String, team_id: String) -> Result<bool, String> {
     clickup::ensure_rt_tag_exists(api_key, team_id).await
+}
+
+/// Tauri command to ensure the "meeting" tag exists in the workspace.
+#[tauri::command]
+async fn ensure_meeting_tag(api_key: String, team_id: String) -> Result<bool, String> {
+    clickup::ensure_meeting_tag_exists(api_key, team_id).await
+}
+
+/// Tauri command to get current meeting presence signal.
+#[tauri::command]
+fn get_meeting_presence() -> Result<MeetingPresence, String> {
+    meeting_detection::get_meeting_presence()
 }
 
 /// Tauri command to add the "rt" tag to a running time entry.
@@ -534,7 +548,9 @@ pub fn run() {
             show_main_window,
             save_widget_position,
             ensure_rt_tag,
+            ensure_meeting_tag,
             add_rt_tag_to_time_entry,
+            get_meeting_presence,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

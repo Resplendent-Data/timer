@@ -7,11 +7,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { onAction } from "@tauri-apps/plugin-notification";
 import { checkNotificationPermission } from "./lib/notification";
 import { useIdleChecker } from "./hooks/useIdleChecker";
 import { useActivityHeartbeat } from "./hooks/useActivityHeartbeat";
+import { useMeetingDetector } from "./hooks/useMeetingDetector";
 import { Settings } from "./components/Settings";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
@@ -28,6 +29,9 @@ function App() {
 
   // Start the activity heartbeat (runs every 30 seconds for stats tracking)
   useActivityHeartbeat();
+
+  // Start meeting detection prompt flow (runs every 20 seconds when enabled)
+  useMeetingDetector(idleStatus);
 
   // Create or close the widget window based on settings
   const updateWidgetState = useCallback(async (enabled: boolean) => {
@@ -69,11 +73,28 @@ function App() {
 
     const setup = async () => {
       try {
-        const listener = await onAction(() => {
+        const listener = await onAction((notification) => {
           // Show the main window when notification is clicked
           invoke("show_main_window").catch((error) => {
             console.error("Failed to show main window on notification click:", error);
           });
+          setActiveTab("status");
+
+          const intent = notification.extra?.intent;
+          if (intent === "meeting-start") {
+            emit("open-meeting-modal").catch((error) => {
+              console.error("Failed to emit open-meeting-modal event:", error);
+            });
+            return;
+          }
+
+          if (intent === "meeting-resume") {
+            emit("show-meeting-resume", notification.extra?.resume_payload ?? null).catch(
+              (error) => {
+                console.error("Failed to emit show-meeting-resume event:", error);
+              }
+            );
+          }
         });
         unlistenFn = () => listener.unregister();
       } catch (error) {
