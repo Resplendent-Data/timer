@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { getLastUpdateCheckAt, setLastUpdateCheckAt } from "../lib/store";
 
 /** Update check interval in milliseconds (1 hour) */
 const UPDATE_CHECK_INTERVAL = 60 * 60 * 1000;
@@ -37,6 +38,8 @@ export interface UseUpdaterResult {
   error: string | null;
   /** Current app version */
   currentVersion: string;
+  /** Timestamp of the last time an update check was started */
+  lastCheckedAt: number | null;
   /** Manually trigger an update check */
   checkForUpdates: () => Promise<void>;
   /** Status message for UI */
@@ -50,6 +53,7 @@ export function useUpdater(): UseUpdaterResult {
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState("0.0.0");
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState("You're up to date");
 
   const isUpdatingRef = useRef(false);
@@ -61,6 +65,10 @@ export function useUpdater(): UseUpdaterResult {
     import("@tauri-apps/api/app").then(({ getVersion }) => {
       getVersion().then(setCurrentVersion).catch(console.error);
     });
+  }, []);
+
+  useEffect(() => {
+    getLastUpdateCheckAt().then(setLastCheckedAt).catch(console.error);
   }, []);
 
   const performUpdate = useCallback(async (update: Update) => {
@@ -119,6 +127,9 @@ export function useUpdater(): UseUpdaterResult {
         setStatusMessage("Checking for updates...");
       }
       setError(null);
+      const checkedAt = Date.now();
+      setLastCheckedAt(checkedAt);
+      void setLastUpdateCheckAt(checkedAt);
 
       try {
         const update = await check();
@@ -195,6 +206,7 @@ export function useUpdater(): UseUpdaterResult {
     progress,
     error,
     currentVersion,
+    lastCheckedAt,
     checkForUpdates,
     statusMessage,
   };

@@ -15,8 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { normalizeWorkdays, parseTimeToMinutes } from "@/lib/workSchedule";
 import { IdleStatus } from "../hooks/useIdleChecker";
-import { getSettings, DEFAULT_WORK_DAYS } from "../lib/store";
+import { getSettings } from "../lib/store";
 import { FocusChart } from "./stats/FocusChart";
 import { IdleHistory } from "./stats/IdleHistory";
 
@@ -137,21 +138,6 @@ function runningSecondsTrackedToday(startTimeMs: number, nowMs: number): number 
 
 interface StatsProps {
   status: IdleStatus;
-}
-
-function parseTimeToMinutes(time: string | null | undefined, fallback: number): number {
-  if (!time) return fallback;
-  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
-  if (!match) return fallback;
-  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-}
-
-function normalizeWorkdays(days: number[] | null | undefined): number[] {
-  if (!Array.isArray(days)) return [...DEFAULT_WORK_DAYS];
-  const normalized = Array.from(
-    new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))
-  ).sort((a, b) => a - b);
-  return normalized.length > 0 ? normalized : [...DEFAULT_WORK_DAYS];
 }
 
 export function Stats({ status }: StatsProps) {

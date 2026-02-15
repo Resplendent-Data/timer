@@ -56,6 +56,7 @@ Enable this feature to get notified when you've been working without a timer:
 
 - **Warn after X minutes**: How long to wait before warning
 - **Repeat warning**: Whether to keep reminding you at intervals
+- **Repeat only during work hours**: Limit repeated reminders to your configured Work Hours window and workdays
 
 ## Building from Source
 

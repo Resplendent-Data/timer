@@ -13,6 +13,7 @@ import { listen, emit, UnlistenFn } from "@tauri-apps/api/event";
 import { exit } from "@tauri-apps/plugin-process";
 import { sendNotification } from "../lib/notification";
 import { getSettings, addRecentTask } from "../lib/store";
+import { isWithinWorkSchedule } from "../lib/workSchedule";
 
 /** Result returned from the Rust check_and_stop_timer command */
 interface IdleCheckResult {
@@ -167,6 +168,10 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
   const taggedTimerIdsRef = useRef<Set<string>>(new Set());
   /** Most recent running timer seen, used to capture manual stop metadata */
   const lastRunningTimerRef = useRef<RunningTimerInfo | null>(null);
+  /** Start timestamp of the current off-hours segment (repeat-warning pause window) */
+  const repeatOffHoursPauseStartedAtRef = useRef<number | null>(null);
+  /** Accumulated off-hours duration for the current repeat-warning cycle */
+  const repeatOffHoursPausedMsRef = useRef(0);
 
   const [status, setStatus] = useState<IdleStatus>({
     isRunning: false,
@@ -273,6 +278,8 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
             // Timer is running - update lastTimerSeenAt and reset warning state
             lastTimerSeenAtRef.current = Date.now();
             lastNoTimerWarningAtRef.current = null;
+            repeatOffHoursPauseStartedAtRef.current = null;
+            repeatOffHoursPausedMsRef.current = 0;
 
             // Add to recent tasks if this is a new task we haven't tracked yet
             // (only if task has a task_id - manual timers without tasks won't be added)
@@ -379,20 +386,58 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
             }
 
             const timeSinceLastTimer = now - lastTimerSeenAtRef.current;
-            const timeSinceLastWarning = lastNoTimerWarningAtRef.current
-              ? now - lastNoTimerWarningAtRef.current
-              : Infinity;
+            const lastNoTimerWarningAt = lastNoTimerWarningAtRef.current;
+            let shouldWarn = false;
 
-            // Should we warn?
-            // - User must be active (not idle)
-            // - Time since last timer must exceed threshold
-            // - Either: repeat is enabled OR we haven't warned yet this session
-            const shouldWarn =
-              isUserActive &&
-              timeSinceLastTimer >= warningThresholdMs &&
-              (settings.noTimerWarningRepeat
-                ? timeSinceLastWarning >= warningThresholdMs
-                : lastNoTimerWarningAtRef.current === null);
+            if (isUserActive && timeSinceLastTimer >= warningThresholdMs) {
+              if (!settings.noTimerWarningRepeat) {
+                // One-shot mode: warn once until a timer starts.
+                shouldWarn = lastNoTimerWarningAt === null;
+                repeatOffHoursPauseStartedAtRef.current = null;
+                repeatOffHoursPausedMsRef.current = 0;
+              } else if (lastNoTimerWarningAt === null) {
+                // Keep first-warning behavior unchanged even when work-hours gate is on.
+                shouldWarn = true;
+                repeatOffHoursPauseStartedAtRef.current = null;
+                repeatOffHoursPausedMsRef.current = 0;
+              } else if (!settings.noTimerWarningRepeatOnlyDuringWorkHours) {
+                const timeSinceLastWarning = now - lastNoTimerWarningAt;
+                shouldWarn = timeSinceLastWarning >= warningThresholdMs;
+                repeatOffHoursPauseStartedAtRef.current = null;
+                repeatOffHoursPausedMsRef.current = 0;
+              } else {
+                const inWorkHours = isWithinWorkSchedule(
+                  new Date(now),
+                  settings.workdayStart,
+                  settings.workdayEnd,
+                  settings.workdays
+                );
+
+                if (!inWorkHours) {
+                  if (repeatOffHoursPauseStartedAtRef.current === null) {
+                    repeatOffHoursPauseStartedAtRef.current = now;
+                  }
+                } else if (repeatOffHoursPauseStartedAtRef.current !== null) {
+                  repeatOffHoursPausedMsRef.current +=
+                    now - repeatOffHoursPauseStartedAtRef.current;
+                  repeatOffHoursPauseStartedAtRef.current = null;
+                }
+
+                const accumulatedPausedMs =
+                  repeatOffHoursPausedMsRef.current +
+                  (repeatOffHoursPauseStartedAtRef.current !== null
+                    ? now - repeatOffHoursPauseStartedAtRef.current
+                    : 0);
+
+                const effectiveTimeSinceLastWarning = Math.max(
+                  0,
+                  now - lastNoTimerWarningAt - accumulatedPausedMs
+                );
+
+                shouldWarn =
+                  inWorkHours && effectiveTimeSinceLastWarning >= warningThresholdMs;
+              }
+            }
 
             if (shouldWarn) {
               const minutesWithoutTimer = Math.floor(timeSinceLastTimer / 60000);
@@ -402,11 +447,16 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
               });
 
               lastNoTimerWarningAtRef.current = now;
+              repeatOffHoursPauseStartedAtRef.current = null;
+              repeatOffHoursPausedMsRef.current = 0;
               setStatus((prev) => ({
                 ...prev,
                 lastNoTimerWarningAt: new Date(now),
               }));
             }
+          } else {
+            repeatOffHoursPauseStartedAtRef.current = null;
+            repeatOffHoursPausedMsRef.current = 0;
           }
         } catch {
           // Ignore errors fetching running timer

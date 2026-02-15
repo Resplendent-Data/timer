@@ -6,18 +6,11 @@
  */
 
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { DEFAULT_WORK_DAYS, normalizeWorkdays } from "./workSchedule";
 
 // Use LazyStore which handles initialization on first access
 const store = new LazyStore("settings.json");
-export const DEFAULT_WORK_DAYS: number[] = [0, 1, 2, 3, 4];
-
-function normalizeWorkdays(days: number[] | null | undefined): number[] {
-  if (!Array.isArray(days)) return [...DEFAULT_WORK_DAYS];
-  const normalized = Array.from(
-    new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))
-  ).sort((a, b) => a - b);
-  return normalized.length > 0 ? normalized : [...DEFAULT_WORK_DAYS];
-}
+export { DEFAULT_WORK_DAYS };
 
 /**
  * Widget position for the always-on-top timer widget.
@@ -43,6 +36,8 @@ export interface AppSettings {
   noTimerWarningMinutes: number;
   /** Whether to repeat the warning at intervals (vs once per session) */
   noTimerWarningRepeat: boolean;
+  /** Whether repeated no-timer warnings should only fire during work hours */
+  noTimerWarningRepeatOnlyDuringWorkHours: boolean;
   /** Whether to detect meetings and prompt for meeting-mode timer */
   meetingDetectionEnabled: boolean;
   /** Whether to show the always-on-top timer widget */
@@ -81,6 +76,9 @@ export async function getSettings(): Promise<AppSettings | null> {
   const noTimerWarningEnabled = await store.get<boolean>("noTimerWarningEnabled");
   const noTimerWarningMinutes = await store.get<number>("noTimerWarningMinutes");
   const noTimerWarningRepeat = await store.get<boolean>("noTimerWarningRepeat");
+  const noTimerWarningRepeatOnlyDuringWorkHours = await store.get<boolean>(
+    "noTimerWarningRepeatOnlyDuringWorkHours"
+  );
   const meetingDetectionEnabled = await store.get<boolean>("meetingDetectionEnabled");
   const workdayStart = await store.get<string>("workdayStart");
   const workdayEnd = await store.get<string>("workdayEnd");
@@ -100,6 +98,8 @@ export async function getSettings(): Promise<AppSettings | null> {
     noTimerWarningEnabled: noTimerWarningEnabled ?? true,
     noTimerWarningMinutes: noTimerWarningMinutes ?? 10,
     noTimerWarningRepeat: noTimerWarningRepeat ?? false,
+    noTimerWarningRepeatOnlyDuringWorkHours:
+      noTimerWarningRepeatOnlyDuringWorkHours ?? true,
     meetingDetectionEnabled: meetingDetectionEnabled ?? false,
     widgetEnabled: widgetEnabled ?? false,
     workdayStart: workdayStart ?? "08:00",
@@ -120,6 +120,10 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("noTimerWarningEnabled", settings.noTimerWarningEnabled);
   await store.set("noTimerWarningMinutes", settings.noTimerWarningMinutes);
   await store.set("noTimerWarningRepeat", settings.noTimerWarningRepeat);
+  await store.set(
+    "noTimerWarningRepeatOnlyDuringWorkHours",
+    settings.noTimerWarningRepeatOnlyDuringWorkHours
+  );
   await store.set("meetingDetectionEnabled", settings.meetingDetectionEnabled);
   await store.set("widgetEnabled", settings.widgetEnabled);
   await store.set("workdayStart", settings.workdayStart);
@@ -265,5 +269,34 @@ export async function isWidgetEnabled(): Promise<boolean> {
     return enabled ?? false;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Get the timestamp of the most recent update check.
+ *
+ * @returns Unix timestamp in milliseconds, or null if never checked
+ */
+export async function getLastUpdateCheckAt(): Promise<number | null> {
+  try {
+    const timestamp = await store.get<number>("lastUpdateCheckAt");
+    return typeof timestamp === "number" ? timestamp : null;
+  } catch (err) {
+    console.error("[store] Error getting last update check timestamp:", err);
+    return null;
+  }
+}
+
+/**
+ * Save the timestamp of the most recent update check.
+ *
+ * @param timestamp - Unix timestamp in milliseconds
+ */
+export async function setLastUpdateCheckAt(timestamp: number): Promise<void> {
+  try {
+    await store.set("lastUpdateCheckAt", timestamp);
+    await store.save();
+  } catch (err) {
+    console.error("[store] Error saving last update check timestamp:", err);
   }
 }

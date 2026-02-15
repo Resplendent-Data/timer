@@ -40,6 +40,7 @@ export function Settings({ onSave }: SettingsProps) {
     noTimerWarningEnabled: true,
     noTimerWarningMinutes: 10,
     noTimerWarningRepeat: false,
+    noTimerWarningRepeatOnlyDuringWorkHours: true,
     meetingDetectionEnabled: false,
     widgetEnabled: false,
     workdayStart: "08:00",
@@ -54,6 +55,13 @@ export function Settings({ onSave }: SettingsProps) {
 
   // Auto-updater
   const updater = useUpdater();
+  const lastCheckedText =
+    updater.lastCheckedAt === null
+      ? "Never"
+      : new Date(updater.lastCheckedAt).toLocaleString(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        });
 
   // Load settings on mount
   useEffect(() => {
@@ -291,6 +299,31 @@ export function Settings({ onSave }: SettingsProps) {
                 }
               />
             </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label
+                  htmlFor="noTimerWarningRepeatOnlyDuringWorkHours"
+                  className="text-sm"
+                >
+                  Repeat only during work hours
+                </Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Uses Work Hours workdays and start/end below.
+                </p>
+              </div>
+              <Switch
+                id="noTimerWarningRepeatOnlyDuringWorkHours"
+                checked={settings.noTimerWarningRepeatOnlyDuringWorkHours}
+                disabled={!settings.noTimerWarningRepeat}
+                onCheckedChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    noTimerWarningRepeatOnlyDuringWorkHours: checked,
+                  })
+                }
+              />
+            </div>
           </>
         )}
       </div>
@@ -442,11 +475,17 @@ export function Settings({ onSave }: SettingsProps) {
         <div className="brutalist-label">Updates</div>
 
         <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label className="text-sm">Version</Label>
-            <p className="text-xs text-muted-foreground">
-              v{updater.currentVersion}
-            </p>
+          <div className="space-y-1">
+            <div className="space-y-0.5">
+              <Label className="text-sm">Version</Label>
+              <p className="text-xs text-muted-foreground">
+                v{updater.currentVersion}
+              </p>
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-sm">Last checked</Label>
+              <p className="text-xs text-muted-foreground">{lastCheckedText}</p>
+            </div>
           </div>
           <Button
             type="button"
