@@ -3538,7 +3538,7 @@ dependencies = [
 
 [[package]]
 name = "resplendent-timer"
-version = "0.14.6"
+version = "0.14.8"
 dependencies = [
  "block2",
  "chrono",

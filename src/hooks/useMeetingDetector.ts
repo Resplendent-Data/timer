@@ -21,6 +21,7 @@ interface MeetingPresence {
   bundle_id: string | null;
   window_title: string | null;
   reason: string | null;
+  diagnostic: string | null;
 }
 
 export interface MeetingResumeSnapshot {
@@ -81,6 +82,11 @@ export function useMeetingDetector(status: IdleStatus): void {
   const sessionActiveRef = useRef(false);
   const startPromptSentRef = useRef(false);
   const preMeetingSnapshotRef = useRef<MeetingResumeSnapshot | null>(null);
+  const lastLoggedPresenceRef = useRef<{
+    in_meeting: boolean;
+    reason: string | null;
+    diagnostic: string | null;
+  } | null>(null);
 
   useEffect(() => {
     latestStatusRef.current = status;
@@ -92,6 +98,7 @@ export function useMeetingDetector(status: IdleStatus): void {
     sessionActiveRef.current = false;
     startPromptSentRef.current = false;
     preMeetingSnapshotRef.current = null;
+    lastLoggedPresenceRef.current = null;
   }, []);
 
   const pollMeetingState = useCallback(async () => {
@@ -109,6 +116,28 @@ export function useMeetingDetector(status: IdleStatus): void {
       const presence = await invoke<MeetingPresence>("get_meeting_presence");
       if (!presence.supported) {
         return;
+      }
+
+      const previousPresence = lastLoggedPresenceRef.current;
+      const shouldLogPresence =
+        !previousPresence ||
+        previousPresence.in_meeting !== presence.in_meeting ||
+        previousPresence.reason !== presence.reason ||
+        previousPresence.diagnostic !== presence.diagnostic;
+      if (shouldLogPresence) {
+        console.debug("[useMeetingDetector] Presence update:", {
+          in_meeting: presence.in_meeting,
+          app_name: presence.app_name,
+          bundle_id: presence.bundle_id,
+          window_title: presence.window_title,
+          reason: presence.reason,
+          diagnostic: presence.diagnostic,
+        });
+        lastLoggedPresenceRef.current = {
+          in_meeting: presence.in_meeting,
+          reason: presence.reason,
+          diagnostic: presence.diagnostic,
+        };
       }
 
       const currentStatus = latestStatusRef.current;
