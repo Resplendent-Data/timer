@@ -88,6 +88,109 @@ interface HintProps {
   text: string;
 }
 
+const LEVEL_LABELS: readonly string[] = [
+  "Caffeinated Spreadsheet Goblin",
+  "Junior Narwhal Wrangler",
+  "Ctrl-Z Sorcerer Apprentice",
+  "CSV Canoe Captain",
+  "Bug Buffet Enthusiast",
+  "Pivot Table Pirate",
+  "Tiny SQL Menace",
+  "Dashboard Disco Intern",
+  "Meeting Escape Artist",
+  "Keyboard Slam Specialist",
+  "Regex Rodeo Clown",
+  "Packet Snack Baron",
+  "Sassy Cache Gremlin",
+  "Banana-Fueled Analyst",
+  "Timebox Tumbleweed",
+  "Logfile Archaeologist",
+  "Unpaid Query Wizard",
+  "Semicolon Whisper Goblin",
+  "Narwhal Submarine DJ",
+  "Data Dumpster Diver",
+  "Alarm Snooze Engineer",
+  "Stack Trace Therapist",
+  "Metric Mayhem Scout",
+  "Cron Nap Coordinator",
+  "Spreadsheet Burrito Architect",
+  "Chaos Dashboard Druid",
+  "JSON Origami Instructor",
+  "Latency Lizard Tamer",
+  "Deadline Skateboard Monk",
+  "API Karaoke Host",
+  "KPI Chaos Cartographer",
+  "Database Dungeon Bard",
+  "Null Pointer Necromancer",
+  "Cloud Yak Rancher",
+  "Recursive Snack Prophet",
+  "Bugzilla Bounty Hunter",
+  "Chart Wizard on Rollerblades",
+  "Pipeline Pancake Flipper",
+  "Narwhal Torpedo Commander",
+  "Outlier Exorcist",
+  "Feature Flag Flamethrower",
+  "Deploy Button Daredevil",
+  "Uptime Goblin King",
+  "Bandwidth Banjo Virtuoso",
+  "Type System Wrestling Coach",
+  "Code Review Cryptid",
+  "Hotfix Cowboy Supreme",
+  "Incident Pajama General",
+  "Anxious Build Whisperer",
+  "Data Volcano Tour Guide",
+  "Quantum Spreadsheet Sheriff",
+  "Treemap Thunder Unicorn",
+  "Query Dungeon Master",
+  "Hyperfocus Hamster Pilot",
+  "A/B Testing Trickster",
+  "Cursor Teleportation Technician",
+  "Event Loop Acrobat",
+  "Version Control Vandal",
+  "Cache Dragon Babysitter",
+  "Narwhal Battle Admiral",
+  "Throughput Thunder Llama",
+  "Skeptical Metric Priest",
+  "Pipeline Goblin Overlord",
+  "Spreadsheet Samurai of Snacks",
+  "Synthetic Data Troubadour",
+  "Dashboard Mirage Merchant",
+  "Chaos Monkey Ringmaster",
+  "Index Oracle on Stilts",
+  "Latency Lighthouse Keeper",
+  "Packet Wizard of Swamps",
+  "Celery Queue Bard",
+  "API Gateway Gladiator",
+  "Bitemporal Time Wizard",
+  "YAML Summoning Specialist",
+  "Kernel Panic Poet",
+  "Distributed Systems Cowboy",
+  "Graph Database Dungeon Boss",
+  "Narwhal Cosmonaut Prime",
+  "Anomaly Hunter General",
+  "Predictive Model Menace",
+  "Kubernetes Snack Emperor",
+  "Staging Environment Warlock",
+  "P99 Doom Prophet",
+  "Infinite Scroll Cartographer",
+  "Telemetry Thunder Prophet",
+  "Data Lake Sea Monster",
+  "Cache Cathedral Architect",
+  "Schema Apocalypse Herald",
+  "Refactor Necromancer Deluxe",
+  "Chronological Chaos Duke",
+  "Moonlit SQL Shaman",
+  "Galactic KPI Overmind",
+  "Lord of Missing Semicolons",
+  "Baron of Broken Merges",
+  "Supreme Narwhal Data Tyrant",
+  "Cosmic Pivot Warlord",
+  "Hyperdimensional Query Oracle",
+  "Mythic Spreadsheet Kaiju",
+  "Final Boss of Focus Mode",
+  "Transcendent Narwhal of Numbers",
+];
+
 function Hint({ text }: HintProps) {
   return (
     <span
@@ -119,11 +222,13 @@ function formatMinutes(mins: number): string {
 }
 
 function levelTitle(level: number): string {
-  if (level < 3) return "Rookie";
-  if (level < 6) return "Builder";
-  if (level < 10) return "Executor";
-  if (level < 15) return "Strategist";
-  return "Legend";
+  const wholeLevel = Math.max(1, Math.floor(level));
+  const cappedIndex = Math.min(wholeLevel, LEVEL_LABELS.length) - 1;
+  const baseLabel = LEVEL_LABELS[cappedIndex];
+  if (wholeLevel <= LEVEL_LABELS.length) {
+    return baseLabel;
+  }
+  return `${baseLabel} +${wholeLevel - LEVEL_LABELS.length}`;
 }
 
 function runningSecondsTrackedToday(startTimeMs: number, nowMs: number): number {
@@ -284,6 +389,7 @@ export function Stats({ status }: StatsProps) {
   const lastWeekBarPercent = Math.round(
     (stats.active_seconds_last_week / weekBarMax) * 100
   );
+  const cappedCurrentLevel = Math.min(Math.max(stats.current_level, 1), LEVEL_LABELS.length);
 
   const TrendIcon =
     stats.week_delta_seconds > 0
@@ -368,6 +474,46 @@ export function Stats({ status }: StatsProps) {
               ? ` • +${earnedQuestXp} quest XP (${questXpSourceText})`
               : " • complete quests below to earn quest XP"}
           </p>
+        </div>
+      </div>
+
+      <div className="brutalist-border bg-card/70 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="brutalist-label flex items-center gap-1">
+            <Sparkles className="h-3 w-3" />
+            Level Rubric
+          </p>
+          <span className="font-mono-display text-xs text-muted-foreground">
+            100 absurd ranks
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          One title per level. Current highlight: Lv {cappedCurrentLevel}.
+        </p>
+        <div className="mt-3 max-h-72 overflow-y-auto brutalist-border bg-background/40 p-2">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+            {LEVEL_LABELS.map((label, index) => {
+              const level = index + 1;
+              const isCurrent = level === cappedCurrentLevel;
+
+              return (
+                <div
+                  key={level}
+                  className={cn(
+                    "flex items-center justify-between gap-2 brutalist-border px-2 py-1.5 text-xs",
+                    isCurrent ? "bg-primary/15 border-primary" : "bg-card/60"
+                  )}
+                >
+                  <span className="font-mono-display text-[11px] text-muted-foreground">
+                    Lv {level}
+                  </span>
+                  <span className={cn("text-right", isCurrent && "font-semibold")}>
+                    {label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
