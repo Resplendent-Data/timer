@@ -89,106 +89,106 @@ interface HintProps {
 }
 
 const LEVEL_LABELS: readonly string[] = [
-  "Caffeinated Spreadsheet Goblin",
-  "Junior Narwhal Wrangler",
-  "Ctrl-Z Sorcerer Apprentice",
-  "CSV Canoe Captain",
-  "Bug Buffet Enthusiast",
-  "Pivot Table Pirate",
-  "Tiny SQL Menace",
-  "Dashboard Disco Intern",
-  "Meeting Escape Artist",
-  "Keyboard Slam Specialist",
-  "Regex Rodeo Clown",
-  "Packet Snack Baron",
-  "Sassy Cache Gremlin",
-  "Banana-Fueled Analyst",
-  "Timebox Tumbleweed",
-  "Logfile Archaeologist",
-  "Unpaid Query Wizard",
-  "Semicolon Whisper Goblin",
-  "Narwhal Submarine DJ",
-  "Data Dumpster Diver",
-  "Alarm Snooze Engineer",
-  "Stack Trace Therapist",
-  "Metric Mayhem Scout",
-  "Cron Nap Coordinator",
-  "Spreadsheet Burrito Architect",
-  "Chaos Dashboard Druid",
-  "JSON Origami Instructor",
-  "Latency Lizard Tamer",
-  "Deadline Skateboard Monk",
-  "API Karaoke Host",
-  "KPI Chaos Cartographer",
-  "Database Dungeon Bard",
-  "Null Pointer Necromancer",
-  "Cloud Yak Rancher",
-  "Recursive Snack Prophet",
-  "Bugzilla Bounty Hunter",
-  "Chart Wizard on Rollerblades",
-  "Pipeline Pancake Flipper",
-  "Narwhal Torpedo Commander",
-  "Outlier Exorcist",
-  "Feature Flag Flamethrower",
-  "Deploy Button Daredevil",
-  "Uptime Goblin King",
-  "Bandwidth Banjo Virtuoso",
-  "Type System Wrestling Coach",
-  "Code Review Cryptid",
-  "Hotfix Cowboy Supreme",
-  "Incident Pajama General",
-  "Anxious Build Whisperer",
-  "Data Volcano Tour Guide",
-  "Quantum Spreadsheet Sheriff",
-  "Treemap Thunder Unicorn",
-  "Query Dungeon Master",
-  "Hyperfocus Hamster Pilot",
-  "A/B Testing Trickster",
-  "Cursor Teleportation Technician",
-  "Event Loop Acrobat",
-  "Version Control Vandal",
-  "Cache Dragon Babysitter",
-  "Narwhal Battle Admiral",
-  "Throughput Thunder Llama",
-  "Skeptical Metric Priest",
-  "Pipeline Goblin Overlord",
-  "Spreadsheet Samurai of Snacks",
-  "Synthetic Data Troubadour",
-  "Dashboard Mirage Merchant",
-  "Chaos Monkey Ringmaster",
-  "Index Oracle on Stilts",
-  "Latency Lighthouse Keeper",
-  "Packet Wizard of Swamps",
-  "Celery Queue Bard",
-  "API Gateway Gladiator",
-  "Bitemporal Time Wizard",
-  "YAML Summoning Specialist",
-  "Kernel Panic Poet",
-  "Distributed Systems Cowboy",
-  "Graph Database Dungeon Boss",
-  "Narwhal Cosmonaut Prime",
-  "Anomaly Hunter General",
-  "Predictive Model Menace",
-  "Kubernetes Snack Emperor",
-  "Staging Environment Warlock",
-  "P99 Doom Prophet",
-  "Infinite Scroll Cartographer",
-  "Telemetry Thunder Prophet",
-  "Data Lake Sea Monster",
-  "Cache Cathedral Architect",
-  "Schema Apocalypse Herald",
-  "Refactor Necromancer Deluxe",
-  "Chronological Chaos Duke",
-  "Moonlit SQL Shaman",
-  "Galactic KPI Overmind",
-  "Lord of Missing Semicolons",
-  "Baron of Broken Merges",
-  "Supreme Narwhal Data Tyrant",
-  "Cosmic Pivot Warlord",
-  "Hyperdimensional Query Oracle",
-  "Mythic Spreadsheet Kaiju",
-  "Final Boss of Focus Mode",
-  "Transcendent Narwhal of Numbers",
+  "Unlicensed Spreadsheet Goblin",
+  "Narwhal Forklift Operator",
+  "Semicolon Smuggler",
+  "Midnight CSV Yodeler",
+  "SQL Grease Wizard",
+  "Keyboard Doom Barista",
+  "Pivot Table Chaos Intern",
+  "Bug Farm Shepherd",
+  "Regex Ventriloquist",
+  "Dashboard Jumpscare Engineer",
+  "Packet Soup Sommelier",
+  "Query Goblin on Stilts",
+  "Cache Coffin Locksmith",
+  "YAML Weather Shaman",
+  "Cron Job Fortune Teller",
+  "Latency Cowboy Astronaut",
+  "Data Dumpster Fire Marshal",
+  "Null Pointer Exorcist",
+  "API Goblet Blacksmith",
+  "Narwhal Submarine Dentist",
+  "Metric Poltergeist Wrangler",
+  "Build Log Conspiracy Theorist",
+  "Bandwidth Bonfire Juggler",
+  "Schema Origami Menace",
+  "Flaky Test Warlord",
+  "Incident Karaoke Dictator",
+  "Spreadsheet Werewolf",
+  "Pipeline Catapult Operator",
+  "Cursor Telepathy Intern",
+  "Version Control Time Traveler",
+  "Anomaly Rodeo Clown",
+  "ETL Moon Priest",
+  "Dashboard Thunder Medium",
+  "Graph Goblin Cartographer",
+  "Feature Flag Pyromancer",
+  "Stack Trace Archaeopteryx",
+  "Uptime Candle Dealer",
+  "API Gatekeeper of Snacks",
+  "Cache Voodoo Mechanic",
+  "Narwhal Torpedo Sommelier",
+  "KPI Dungeon Locksmith",
+  "Data Lake Swamp Oracle",
+  "Hyperfocus Ferret Captain",
+  "Deploy Button Gladiator",
+  "Packet Necromancer Deluxe",
+  "Query Wizard on Rollerblades",
+  "Cron Nap Overlord",
+  "Bug Tribunal Supreme",
+  "Timebox Witch Doctor",
+  "JSON Flamenco Instructor",
+  "Database Volcano Cartographer",
+  "P99 Apocalypse Scout",
+  "Refactor Luchador Prime",
+  "YAML Summoning DJ",
+  "Schema Disco Warden",
+  "Incident Pajama Emperor",
+  "Regex Shuriken Monk",
+  "Bandwidth Kraken Shepherd",
+  "Treemap Doom Bard",
+  "Narwhal Mecha Admiral",
+  "Telemetry Thunder Bishop",
+  "Recursive Snack Prophet Plus",
+  "Cloud Yak Shaman King",
+  "Synthetic Data Alchemist Unbound",
+  "A/B Test Chaos Pilgrim",
+  "Throughput Basilisk Tamer",
+  "Kubernetes Tentacle Baron",
+  "Logfile Cryptid Hunter",
+  "Widget Necromancer",
+  "Outlier Doomsday Cartographer",
+  "Index Mirage Alchemist",
+  "Kernel Panic Orchestra Conductor",
+  "Feature Creep Exterminator",
+  "Latency Lighthouse Warlock",
+  "Distributed Systems Vampire",
+  "Query Catacomb Curator",
+  "Narwhal Nebula Warlord",
+  "Metric Black Hole Gardener",
+  "Pipeline Poltergeist Supreme",
+  "Dashboard Kaiju Wrangler",
+  "Data Cathedral Scream Prophet",
+  "Semicolon Thunder Tyrant",
+  "Cache Cathedral Gargoyle",
+  "Chronological Chaos Baron",
+  "Anomaly Tornado Herder",
+  "Graph Database Dungeon Kaiju",
+  "Moonlit SQL Necromancer",
+  "Galactic KPI Overmind V2",
+  "Hyperdimensional Pivot Oracle",
+  "Cursor Rift Commander",
+  "Staging Realm Archmage",
+  "Refactor Apocalypse Herald",
+  "Bug Volcano Ambassador",
+  "Lord of Missing Parentheses",
+  "Baron of Broken Rollbacks",
+  "Supreme Narwhal Time Emperor",
+  "Mythic Spreadsheet Leviathan",
+  "Final Boss of Focus Reality",
+  "Transcendent Data Doom Oracle",
+  "Omniversal Narwhal of Infinite Metrics",
 ];
 
 function Hint({ text }: HintProps) {
@@ -477,46 +477,6 @@ export function Stats({ status }: StatsProps) {
         </div>
       </div>
 
-      <div className="brutalist-border bg-card/70 p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="brutalist-label flex items-center gap-1">
-            <Sparkles className="h-3 w-3" />
-            Level Rubric
-          </p>
-          <span className="font-mono-display text-xs text-muted-foreground">
-            100 absurd ranks
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          One title per level. Current highlight: Lv {cappedCurrentLevel}.
-        </p>
-        <div className="mt-3 max-h-72 overflow-y-auto brutalist-border bg-background/40 p-2">
-          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-            {LEVEL_LABELS.map((label, index) => {
-              const level = index + 1;
-              const isCurrent = level === cappedCurrentLevel;
-
-              return (
-                <div
-                  key={level}
-                  className={cn(
-                    "flex items-center justify-between gap-2 brutalist-border px-2 py-1.5 text-xs",
-                    isCurrent ? "bg-primary/15 border-primary" : "bg-card/60"
-                  )}
-                >
-                  <span className="font-mono-display text-[11px] text-muted-foreground">
-                    Lv {level}
-                  </span>
-                  <span className={cn("text-right", isCurrent && "font-semibold")}>
-                    {label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
       <div className="grid grid-cols-2 gap-3">
         <div className="brutalist-border bg-card/70 p-3">
           <p className="brutalist-label flex items-center gap-1">
@@ -711,6 +671,48 @@ export function Stats({ status }: StatsProps) {
           <Hint text="Logs idle-threshold events and whether a running ClickUp timer was auto-stopped." />
         </div>
         <IdleHistory events={stats.recent_events} />
+      </div>
+
+      <div className="brutalist-border bg-card/70 p-4">
+        <details>
+          <summary className="flex cursor-pointer items-center justify-between gap-2">
+            <p className="brutalist-label flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />
+              About Levels
+            </p>
+            <span className="font-mono-display text-xs text-muted-foreground">
+              100 absurd ranks
+            </span>
+          </summary>
+          <p className="mt-2 text-xs text-muted-foreground">
+            One title per level. Current highlight: Lv {cappedCurrentLevel}.
+          </p>
+          <div className="mt-3 max-h-72 overflow-y-auto brutalist-border bg-background/40 p-2">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+              {LEVEL_LABELS.map((label, index) => {
+                const level = index + 1;
+                const isCurrent = level === cappedCurrentLevel;
+
+                return (
+                  <div
+                    key={level}
+                    className={cn(
+                      "flex items-center justify-between gap-2 brutalist-border px-2 py-1.5 text-xs",
+                      isCurrent ? "bg-primary/15 border-primary" : "bg-card/60"
+                    )}
+                  >
+                    <span className="font-mono-display text-[11px] text-muted-foreground">
+                      Lv {level}
+                    </span>
+                    <span className={cn("text-right", isCurrent && "font-semibold")}>
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </details>
       </div>
 
       <div className="flex justify-end">
