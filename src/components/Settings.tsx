@@ -9,6 +9,7 @@ import {
   getSettings,
   saveSettings,
   AppSettings,
+  DEFAULT_EXPECTED_HOURS_PER_DAY,
   DEFAULT_WORK_DAYS,
 } from "../lib/store";
 import { useUpdater } from "../hooks/useUpdater";
@@ -46,6 +47,7 @@ export function Settings({ onSave }: SettingsProps) {
     workdayStart: "08:00",
     workdayEnd: "17:00",
     workdays: [...DEFAULT_WORK_DAYS],
+    expectedHoursPerDay: DEFAULT_EXPECTED_HOURS_PER_DAY,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -112,6 +114,9 @@ export function Settings({ onSave }: SettingsProps) {
       }
       if (settings.workdays.length === 0) {
         throw new Error("Select at least one workday");
+      }
+      if (settings.expectedHoursPerDay <= 0) {
+        throw new Error("Expected hours per day must be greater than 0");
       }
 
       await saveSettings(settings);
@@ -388,6 +393,33 @@ export function Settings({ onSave }: SettingsProps) {
           Stats only count active/idle time within this local time window.
           Overnight windows are supported (for example: 22:00 to 06:00).
         </p>
+        <div className="space-y-2">
+          <Label
+            htmlFor="expectedHoursPerDay"
+            className="text-xs uppercase tracking-wider"
+          >
+            Expected Hours / Day
+          </Label>
+          <Input
+            id="expectedHoursPerDay"
+            type="number"
+            min={0.5}
+            max={24}
+            step={0.25}
+            value={settings.expectedHoursPerDay}
+            onChange={(e) => {
+              const nextValue = parseFloat(e.target.value);
+              setSettings({
+                ...settings,
+                expectedHoursPerDay: Number.isFinite(nextValue) ? nextValue : 0,
+              });
+            }}
+            className="w-24 text-sm"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Timer page progress uses this target and multiplies it by selected workdays.
+          </p>
+        </div>
         <div className="space-y-2">
           <Label className="text-xs uppercase tracking-wider">Workdays</Label>
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">

@@ -11,6 +11,7 @@ import { DEFAULT_WORK_DAYS, normalizeWorkdays } from "./workSchedule";
 // Use LazyStore which handles initialization on first access
 const store = new LazyStore("settings.json");
 export { DEFAULT_WORK_DAYS };
+export const DEFAULT_EXPECTED_HOURS_PER_DAY = 8;
 
 /**
  * Widget position for the always-on-top timer widget.
@@ -48,6 +49,8 @@ export interface AppSettings {
   workdayEnd: string;
   /** Workdays as 0-6 (Mon-Sun) */
   workdays: number[];
+  /** Daily expected tracked hours used for progress targets */
+  expectedHoursPerDay: number;
 }
 
 /**
@@ -83,6 +86,7 @@ export async function getSettings(): Promise<AppSettings | null> {
   const workdayStart = await store.get<string>("workdayStart");
   const workdayEnd = await store.get<string>("workdayEnd");
   const workdays = await store.get<number[]>("workdays");
+  const expectedHoursPerDay = await store.get<number>("expectedHoursPerDay");
 
   // Return null if required fields are not set
   if (!apiKey || !teamId) {
@@ -105,6 +109,8 @@ export async function getSettings(): Promise<AppSettings | null> {
     workdayStart: workdayStart ?? "08:00",
     workdayEnd: workdayEnd ?? "17:00",
     workdays: normalizeWorkdays(workdays),
+    expectedHoursPerDay:
+      expectedHoursPerDay ?? DEFAULT_EXPECTED_HOURS_PER_DAY,
   };
 }
 
@@ -129,6 +135,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("workdayStart", settings.workdayStart);
   await store.set("workdayEnd", settings.workdayEnd);
   await store.set("workdays", normalizeWorkdays(settings.workdays));
+  await store.set("expectedHoursPerDay", settings.expectedHoursPerDay);
   await store.save();
 }
 
