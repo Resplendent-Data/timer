@@ -43,6 +43,39 @@ fn is_browser_context(app_lower: &str, bundle_lower: &str) -> bool {
         || bundle_lower.contains("company.thebrowser.browser")
 }
 
+fn is_teams_context(app_lower: &str, bundle_lower: &str) -> bool {
+    app_lower.contains("teams") || bundle_lower.contains("com.microsoft.teams")
+}
+
+fn is_teams_meeting_title(title_lower: &str) -> bool {
+    if title_lower.is_empty() {
+        return false;
+    }
+
+    let primary_section = title_lower.split('|').next().unwrap_or_default().trim();
+    if matches!(
+        primary_section,
+        "activity" | "chat" | "calendar" | "teams" | "calls" | "files" | "apps" | "home"
+    ) {
+        return false;
+    }
+
+    let has_call_signal = title_lower.contains(" in call")
+        || title_lower.contains(" on call")
+        || title_lower.contains("call with ")
+        || title_lower.contains(" calling")
+        || title_lower.starts_with("calling ")
+        || title_lower.contains(" call ")
+        || title_lower.ends_with(" call");
+
+    title_lower.contains("meeting")
+        || title_lower.contains("meet now")
+        || has_call_signal
+        || title_lower.contains("webinar")
+        || title_lower.contains("town hall")
+        || title_lower.contains("live event")
+}
+
 fn meeting_reason(
     app_name: Option<&str>,
     bundle_id: Option<&str>,
@@ -57,8 +90,8 @@ fn meeting_reason(
         return Some("zoom-app".to_string());
     }
 
-    let is_teams = app_lower.contains("teams") || bundle_lower.contains("com.microsoft.teams");
-    if is_teams {
+    let is_teams = is_teams_context(&app_lower, &bundle_lower);
+    if is_teams && is_teams_meeting_title(&title_lower) {
         return Some("teams-app".to_string());
     }
 
@@ -148,6 +181,10 @@ fn meeting_diagnostic(
     if is_browser && window_title.is_none() {
         return Some("browser-window-title-unavailable".to_string());
     }
+    let is_teams = is_teams_context(&app_lower, &bundle_lower);
+    if is_teams && window_title.is_none() {
+        return Some("teams-window-title-unavailable".to_string());
+    }
 
     None
 }
@@ -164,6 +201,11 @@ fn fetch_window_title(app_name: &str, bundle_id: Option<&str>) -> WindowTitleFet
         Some((
             "slack-front-window",
             "tell application \"System Events\" to tell process \"Slack\" to get name of front window",
+        ))
+    } else if is_teams_context(&app_lower, &bundle_lower) {
+        Some((
+            "teams-front-window",
+            "tell application \"System Events\" to tell (first application process whose frontmost is true) to get name of front window",
         ))
     } else if app_lower.contains("chrome") || bundle_lower.contains("com.google.chrome") {
         Some((
@@ -288,9 +330,29 @@ mod tests {
         let reason = meeting_reason(
             Some("Microsoft Teams"),
             Some("com.microsoft.teams2"),
-            Some("Sprint Planning"),
+            Some("Daily Standup Meeting | Microsoft Teams"),
         );
         assert_eq!(reason.as_deref(), Some("teams-app"));
+    }
+
+    #[test]
+    fn does_not_detect_teams_navigation_window() {
+        let reason = meeting_reason(
+            Some("Microsoft Teams"),
+            Some("com.microsoft.teams2"),
+            Some("Chat | Microsoft Teams"),
+        );
+        assert!(reason.is_none());
+    }
+
+    #[test]
+    fn does_not_detect_teams_without_meeting_keyword() {
+        let reason = meeting_reason(
+            Some("Microsoft Teams"),
+            Some("com.microsoft.teams2"),
+            Some("Sprint Planning | Microsoft Teams"),
+        );
+        assert!(reason.is_none());
     }
 
     #[test]
