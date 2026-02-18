@@ -14,6 +14,8 @@ const HEARTBEAT_INTERVAL_SECS: i64 = 30;
 /// Database retention period in days
 const DB_RETENTION_DAYS: i64 = 90;
 const DEFAULT_WORK_DAYS: [usize; 5] = [0, 1, 2, 3, 4];
+/// Defensive cap for a single recorded ClickUp session.
+const MAX_SESSION_DURATION_SECS: i64 = 24 * 60 * 60;
 
 /// Daily activity record
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +73,22 @@ pub struct ProductivityStats {
 
     // Events
     pub recent_events: Vec<IdleEvent>,
+}
+
+fn sanitize_session_duration_secs(duration_secs: i64) -> Option<i64> {
+    if duration_secs <= 0 {
+        return None;
+    }
+
+    if duration_secs > MAX_SESSION_DURATION_SECS {
+        eprintln!(
+            "[stats] Ignoring implausible session duration ({}s > {}s cap)",
+            duration_secs, MAX_SESSION_DURATION_SECS
+        );
+        return None;
+    }
+
+    Some(duration_secs)
 }
 
 fn get_db_path() -> PathBuf {
@@ -209,9 +227,9 @@ pub fn record_heartbeat(is_idle: bool) {
 /// Record a ClickUp timer session when stopped.
 /// Called when a timer is stopped (either manually or due to idle).
 pub fn record_timer_session(duration_secs: i64) {
-    if duration_secs <= 0 {
+    let Some(duration_secs) = sanitize_session_duration_secs(duration_secs) else {
         return;
-    }
+    };
 
     if let Ok(conn) = get_connection() {
         let today = chrono::Local::now().date_naive().to_string();
@@ -243,6 +261,9 @@ pub fn record_idle_event(
     session_duration_secs: i64,
 ) {
     if let Ok(conn) = get_connection() {
+        let safe_session_duration_secs = sanitize_session_duration_secs(session_duration_secs)
+            .unwrap_or_default();
+
         let _ = conn.execute(
             "INSERT INTO idle_events (started_at, duration_secs, timer_stopped, task_name, task_id, session_duration_secs)
              VALUES (?, ?, ?, ?, ?, ?)",
@@ -252,7 +273,7 @@ pub fn record_idle_event(
                 timer_stopped,
                 task_name.as_deref(),
                 task_id.as_deref(),
-                session_duration_secs,
+                safe_session_duration_secs,
             ),
         );
 
@@ -709,5 +730,20 @@ mod tests {
         assert_eq!(xp_for_level(2), 100);
         assert_eq!(xp_for_level(3), 400);
         assert_eq!(xp_for_level(4), 900);
+    }
+
+    #[test]
+    fn test_sanitize_session_duration_secs() {
+        assert_eq!(sanitize_session_duration_secs(0), None);
+        assert_eq!(sanitize_session_duration_secs(-5), None);
+        assert_eq!(sanitize_session_duration_secs(3600), Some(3600));
+        assert_eq!(
+            sanitize_session_duration_secs(MAX_SESSION_DURATION_SECS),
+            Some(MAX_SESSION_DURATION_SECS)
+        );
+        assert_eq!(
+            sanitize_session_duration_secs(MAX_SESSION_DURATION_SECS + 1),
+            None
+        );
     }
 }
