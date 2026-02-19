@@ -20,6 +20,7 @@ import { IdleStatus } from "../hooks/useIdleChecker";
 import { getSettings } from "../lib/store";
 import { FocusChart } from "./stats/FocusChart";
 import { IdleHistory } from "./stats/IdleHistory";
+import { TeamLeaderboard, TeamLeaderboardResponse } from "./stats/TeamLeaderboard";
 
 interface IdleEvent {
   id: number;
@@ -247,6 +248,10 @@ interface StatsProps {
 
 export function Stats({ status }: StatsProps) {
   const [stats, setStats] = useState<ProductivityStats | null>(null);
+  const [leaderboard, setLeaderboard] = useState<TeamLeaderboardResponse | null>(null);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [hasClickupConfig, setHasClickupConfig] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clockMs, setClockMs] = useState(() => Date.now());
@@ -256,19 +261,59 @@ export function Stats({ status }: StatsProps) {
       setLoading(true);
       setError(null);
       const settings = await getSettings();
+      const clickupApiKey = settings?.clickupApiKey ?? "";
+      const clickupTeamId = settings?.clickupTeamId ?? "";
+      const clickupConfigured = Boolean(clickupApiKey && clickupTeamId);
+      setHasClickupConfig(clickupConfigured);
+
+      if (!clickupConfigured) {
+        setLeaderboard(null);
+        setLeaderboardError(null);
+      }
+      setLeaderboardLoading(clickupConfigured);
+
       const workStartMinutes = parseTimeToMinutes(settings?.workdayStart, 8 * 60);
       const workEndMinutes = parseTimeToMinutes(settings?.workdayEnd, 17 * 60);
       const workDays = normalizeWorkdays(settings?.workdays);
-      const result = await invoke<ProductivityStats>("get_productivity_stats", {
+
+      const statsPromise = invoke<ProductivityStats>("get_productivity_stats", {
         workStartMinutes,
         workEndMinutes,
         workDays,
       });
-      setStats(result);
+
+      const leaderboardPromise = clickupConfigured
+        ? invoke<TeamLeaderboardResponse>("get_clickup_team_leaderboard", {
+            apiKey: clickupApiKey,
+            teamId: clickupTeamId,
+          })
+            .then((result) => {
+              setLeaderboardError(null);
+              return result;
+            })
+            .catch((leaderboardErr) => {
+              setLeaderboardError(
+                leaderboardErr instanceof Error
+                  ? leaderboardErr.message
+                  : String(leaderboardErr)
+              );
+              return null;
+            })
+        : Promise.resolve<TeamLeaderboardResponse | null>(null);
+
+      const [statsResult, leaderboardResult] = await Promise.all([
+        statsPromise,
+        leaderboardPromise,
+      ]);
+      setStats(statsResult);
+      if (clickupConfigured && leaderboardResult) {
+        setLeaderboard(leaderboardResult);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+      setLeaderboardLoading(false);
     }
   }, []);
 
@@ -596,6 +641,13 @@ export function Stats({ status }: StatsProps) {
           })}
         </div>
       </div>
+
+      <TeamLeaderboard
+        leaderboard={leaderboard}
+        loading={leaderboardLoading}
+        error={leaderboardError}
+        hasClickupConfig={hasClickupConfig}
+      />
 
       <div className="brutalist-border bg-card/70 p-4">
         <div className="mb-3 flex justify-end">

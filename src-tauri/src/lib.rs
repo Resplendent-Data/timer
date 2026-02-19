@@ -11,7 +11,9 @@ mod stats;
 
 use std::sync::Mutex;
 
-use clickup::{IdleCheckResult, RunningTimerInfo, TaskSearchResult, TimeEntryTag};
+use clickup::{
+    IdleCheckResult, RunningTimerInfo, TaskSearchResult, TeamLeaderboardResponse, TimeEntryTag,
+};
 use meeting_detection::MeetingPresence;
 use stats::ProductivityStats;
 use tauri::{
@@ -277,6 +279,15 @@ async fn get_productivity_stats(
         .map_err(|e| e.to_string())
 }
 
+/// Get ClickUp team leaderboard data for the stats screen.
+#[tauri::command]
+async fn get_clickup_team_leaderboard(
+    api_key: String,
+    team_id: String,
+) -> Result<TeamLeaderboardResponse, String> {
+    clickup::get_clickup_team_leaderboard(api_key, team_id).await
+}
+
 /// Record a heartbeat from the frontend (called every 30 seconds).
 /// Tracks whether the user is currently active or idle.
 #[tauri::command]
@@ -540,6 +551,7 @@ pub fn run() {
             update_tray_timer_display,
             send_notification_linux,
             get_productivity_stats,
+            get_clickup_team_leaderboard,
             record_heartbeat,
             record_timer_session,
             record_idle_event,
