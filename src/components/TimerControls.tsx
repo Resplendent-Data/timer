@@ -597,13 +597,32 @@ export function TimerControls({ status }: TimerControlsProps) {
           onClick={handleResumeTimer}
           disabled={isProcessing}
         >
-          <div className="flex items-center gap-2 w-full">
+          <div className="flex items-center gap-2 w-full min-w-0">
             <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0">
               Resume
             </span>
             <span className="font-medium text-sm truncate">
               {status.lastStoppedTaskName}
             </span>
+            {status.lastStoppedTimerIsManual &&
+              status.lastStoppedTimerTags.filter((t) => t.name !== "rt").length > 0 && (
+              <div className="flex items-center gap-1 shrink-0">
+                {status.lastStoppedTimerTags
+                  .filter((t) => t.name !== "rt")
+                  .map((tag) => (
+                    <span
+                      key={tag.name}
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                      style={{
+                        backgroundColor: tag.tag_bg || "hsl(var(--muted))",
+                        color: tag.tag_fg || "hsl(var(--muted-foreground))",
+                      }}
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+              </div>
+            )}
           </div>
         </Button>
       )}
