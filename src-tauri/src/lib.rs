@@ -236,7 +236,89 @@ fn update_tray_timer_display(
         .map_err(|e| e.to_string())
 }
 
-/// Send a notification using notify-send (Linux only).
+#[cfg(target_os = "linux")]
+async fn send_notification_via_dbus(title: &str, body: &str) -> Result<(), String> {
+    use std::collections::HashMap;
+    use zbus::{zvariant::OwnedValue, Connection};
+
+    let connection = Connection::session()
+        .await
+        .map_err(|e| format!("Failed to connect to session D-Bus: {}", e))?;
+
+    let mut hints: HashMap<&str, OwnedValue> = HashMap::new();
+    hints.insert(
+        "desktop-entry",
+        OwnedValue::from(String::from("com.resplendent.timer")),
+    );
+
+    let actions: Vec<&str> = Vec::new();
+    let reply = connection
+        .call_method(
+            Some("org.freedesktop.Notifications"),
+            "/org/freedesktop/Notifications",
+            Some("org.freedesktop.Notifications"),
+            "Notify",
+            &(
+                "Resplendent Timer",
+                0u32,
+                "resplendent-timer",
+                title,
+                body,
+                actions,
+                hints,
+                5000i32,
+            ),
+        )
+        .await
+        .map_err(|e| format!("D-Bus Notify call failed: {}", e))?;
+
+    // Notify returns a notification ID; deserializing verifies response integrity.
+    let _notification_id: u32 = reply
+        .body()
+        .deserialize()
+        .map_err(|e| format!("Failed to deserialize Notify response: {}", e))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn send_notification_with_notify_send(title: &str, body: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let candidates = ["/usr/bin/notify-send", "notify-send"];
+    let mut last_error: Option<String> = None;
+
+    for candidate in candidates {
+        let output = Command::new(candidate)
+            .arg("--app-name=Resplendent Timer")
+            .arg("--expire-time=5000")
+            .arg(title)
+            .arg(body)
+            .output();
+
+        match output {
+            Ok(result) if result.status.success() => return Ok(()),
+            Ok(result) => {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                last_error = Some(format!(
+                    "{} exited with status {} (stderr: {}, stdout: {})",
+                    candidate,
+                    result.status,
+                    stderr.trim(),
+                    stdout.trim()
+                ));
+            }
+            Err(error) => {
+                last_error = Some(format!("Failed to execute {}: {}", candidate, error));
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "Failed to execute notify-send".to_string()))
+}
+
+/// Send a notification on Linux via D-Bus with notify-send fallback.
 ///
 /// This is a workaround for GNOME 46+ where the Tauri notification plugin
 /// doesn't work due to DBus connection lifecycle issues.
@@ -248,14 +330,19 @@ fn update_tray_timer_display(
 #[cfg(target_os = "linux")]
 #[tauri::command]
 async fn send_notification_linux(title: String, body: String) -> Result<(), String> {
-    use std::process::Command;
+    if let Err(dbus_error) = send_notification_via_dbus(&title, &body).await {
+        eprintln!(
+            "[resplendent] D-Bus notification failed, falling back to notify-send: {}",
+            dbus_error
+        );
 
-    Command::new("notify-send")
-        .arg("--app-name=Resplendent Timer")
-        .arg(&title)
-        .arg(&body)
-        .spawn()
-        .map_err(|e| format!("Failed to send notification: {}", e))?;
+        send_notification_with_notify_send(&title, &body).map_err(|notify_send_error| {
+            format!(
+                "Linux notification failed via D-Bus ({}) and notify-send ({})",
+                dbus_error, notify_send_error
+            )
+        })?;
+    }
 
     Ok(())
 }

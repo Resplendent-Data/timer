@@ -2,7 +2,7 @@
  * Cross-platform notification utility.
  *
  * On macOS: Uses the Tauri notification plugin
- * On Linux: Uses notify-send via a Rust command (workaround for GNOME 46+ bug)
+ * On Linux: Uses a Rust command that sends via D-Bus with notify-send fallback
  *
  * @see https://github.com/tauri-apps/plugins-workspace/issues/2566
  * @see https://github.com/hoodie/notify-rust/issues/218
@@ -33,7 +33,7 @@ function isLinux(): boolean {
  * Check if notification permission is granted (or not needed on Linux).
  */
 export async function checkNotificationPermission(): Promise<boolean> {
-  // Linux uses notify-send which doesn't require permission
+  // Linux notifications are sent via backend D-Bus call (no browser permission needed)
   if (isLinux()) {
     return true;
   }
@@ -50,14 +50,14 @@ export async function checkNotificationPermission(): Promise<boolean> {
 /**
  * Send a notification using the appropriate method for the platform.
  *
- * On Linux: Uses notify-send command via Rust backend
+ * On Linux: Uses a Rust backend command (D-Bus + notify-send fallback)
  * On macOS/Windows: Uses Tauri notification plugin
  */
 export async function sendNotification(
   options: NotificationOptions
 ): Promise<void> {
   if (isLinux()) {
-    // Use notify-send on Linux (workaround for GNOME 46+ bug)
+    // Linux: use backend D-Bus path with notify-send fallback.
     try {
       await invoke("send_notification_linux", {
         title: options.title,
@@ -65,6 +65,16 @@ export async function sendNotification(
       });
     } catch (error) {
       console.error("Failed to send Linux notification:", error);
+      // Best-effort fallback to plugin path on Linux versions where it still works.
+      try {
+        await tauriSendNotification({
+          title: options.title,
+          body: options.body,
+          extra: options.extra,
+        });
+      } catch (pluginError) {
+        console.error("Linux plugin notification fallback also failed:", pluginError);
+      }
     }
     return;
   }
@@ -72,7 +82,7 @@ export async function sendNotification(
   // macOS/Windows: Use Tauri plugin
   const permissionGranted = await checkNotificationPermission();
   if (permissionGranted) {
-    tauriSendNotification({
+    await tauriSendNotification({
       title: options.title,
       body: options.body,
       extra: options.extra,
