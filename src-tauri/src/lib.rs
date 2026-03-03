@@ -239,7 +239,10 @@ fn update_tray_timer_display(
 #[cfg(target_os = "linux")]
 async fn send_notification_via_dbus(title: &str, body: &str) -> Result<(), String> {
     use std::collections::HashMap;
-    use zbus::{zvariant::OwnedValue, Connection};
+    use zbus::{
+        zvariant::{OwnedValue, Str},
+        Connection,
+    };
 
     let connection = Connection::session()
         .await
@@ -248,7 +251,7 @@ async fn send_notification_via_dbus(title: &str, body: &str) -> Result<(), Strin
     let mut hints: HashMap<&str, OwnedValue> = HashMap::new();
     hints.insert(
         "desktop-entry",
-        OwnedValue::from(String::from("com.resplendent.timer")),
+        OwnedValue::from(Str::from("com.resplendent.timer")),
     );
 
     let actions: Vec<&str> = Vec::new();
