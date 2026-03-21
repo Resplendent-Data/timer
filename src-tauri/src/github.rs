@@ -39,41 +39,95 @@ struct SearchResponse {
     items: Vec<SearchItem>,
 }
 
+// --- GraphQL types for "no reviewers" query ---
+
+#[derive(Debug, Deserialize)]
+struct GqlResponse {
+    data: Option<GqlData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlData {
+    search: GqlSearch,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlSearch {
+    nodes: Vec<GqlPrNode>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlPrNode {
+    title: String,
+    url: String,
+    number: u32,
+    repository: GqlRepo,
+    review_requests: GqlConnection,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlRepo {
+    name_with_owner: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlConnection {
+    total_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct GqlQuery {
+    query: String,
+}
+
 /// Extract "owner/repo" from a GitHub API repository URL.
 fn extract_repo_name(repository_url: &str) -> String {
-    // "https://api.github.com/repos/owner/repo" -> "owner/repo"
     repository_url
         .strip_prefix("https://api.github.com/repos/")
         .unwrap_or(repository_url)
         .to_string()
 }
 
+/// Build the standard reqwest client with GitHub headers.
+fn github_headers(token: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("Authorization", format!("Bearer {}", token)),
+        ("Accept", "application/vnd.github+json".to_string()),
+        ("User-Agent", "resplendent-timer".to_string()),
+        ("X-GitHub-Api-Version", "2022-11-28".to_string()),
+    ]
+}
+
 /// Fetch PR counts and details for the given GitHub user.
 ///
-/// Makes three GitHub Search API calls:
-/// 1. PRs where the user is requested as reviewer
-/// 2. Open PRs authored by the user
-/// 3. Open PRs authored by the user with no reviewers assigned
+/// Makes two GitHub Search API calls (review requests + open PRs) and one
+/// GraphQL call to find PRs with zero requested reviewers.
 pub async fn get_pr_counts(token: String, username: String) -> Result<PrCounts, String> {
     let client = reqwest::Client::new();
 
+    // --- REST search queries for review requests and open PRs ---
     let queries = [
         format!("is:pr is:open review-requested:{}", username),
         format!("is:pr is:open author:{}", username),
-        format!("is:pr is:open author:{} review:none", username),
     ];
 
-    let mut counts = [0u32; 3];
-    let mut all_items: [Vec<PrItem>; 3] = [vec![], vec![], vec![]];
+    let mut counts = [0u32; 2];
+    let mut rest_items: [Vec<PrItem>; 2] = [vec![], vec![]];
 
     for (i, query) in queries.iter().enumerate() {
-        let resp = client
+        let mut req = client
             .get("https://api.github.com/search/issues")
-            .query(&[("q", query.as_str()), ("per_page", "25")])
-            .header("Authorization", format!("Bearer {}", token))
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "resplendent-timer")
-            .header("X-GitHub-Api-Version", "2022-11-28")
+            .query(&[("q", query.as_str()), ("per_page", "25")]);
+
+        for (k, v) in github_headers(&token) {
+            req = req.header(k, v);
+        }
+
+        let resp = req
             .send()
             .await
             .map_err(|e| format!("GitHub API request failed: {}", e))?;
@@ -90,7 +144,7 @@ pub async fn get_pr_counts(token: String, username: String) -> Result<PrCounts, 
             .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
 
         counts[i] = search.total_count;
-        all_items[i] = search
+        rest_items[i] = search
             .items
             .into_iter()
             .map(|item| PrItem {
@@ -102,12 +156,69 @@ pub async fn get_pr_counts(token: String, username: String) -> Result<PrCounts, 
             .collect();
     }
 
+    // --- GraphQL query: open PRs by user, then filter for zero reviewRequests ---
+    let gql_query = format!(
+        r#"{{
+  search(query: "is:pr is:open author:{}", type: ISSUE, first: 50) {{
+    issueCount
+    nodes {{
+      ... on PullRequest {{
+        title
+        url
+        number
+        repository {{ nameWithOwner }}
+        reviewRequests(first: 0) {{ totalCount }}
+      }}
+    }}
+  }}
+}}"#,
+        username
+    );
+
+    let gql_resp = client
+        .post("https://api.github.com/graphql")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("User-Agent", "resplendent-timer")
+        .json(&GqlQuery { query: gql_query })
+        .send()
+        .await
+        .map_err(|e| format!("GitHub GraphQL request failed: {}", e))?;
+
+    if !gql_resp.status().is_success() {
+        let status = gql_resp.status();
+        let body = gql_resp.text().await.unwrap_or_default();
+        return Err(format!("GitHub GraphQL returned {}: {}", status, body));
+    }
+
+    let gql: GqlResponse = gql_resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GraphQL response: {}", e))?;
+
+    let gql_data = gql.data.ok_or("GraphQL response missing data field")?;
+
+    // Filter to only PRs with zero requested reviewers
+    let no_reviewer_items: Vec<PrItem> = gql_data
+        .search
+        .nodes
+        .into_iter()
+        .filter(|pr| pr.review_requests.total_count == 0)
+        .map(|pr| PrItem {
+            title: pr.title,
+            html_url: pr.url,
+            number: pr.number,
+            repo: pr.repository.name_with_owner,
+        })
+        .collect();
+
+    let needs_reviewers_count = no_reviewer_items.len() as u32;
+
     Ok(PrCounts {
         review_requests: counts[0],
         my_open_prs: counts[1],
-        needs_reviewers: counts[2],
-        review_requests_items: all_items[0].clone(),
-        my_open_prs_items: all_items[1].clone(),
-        needs_reviewers_items: all_items[2].clone(),
+        needs_reviewers: needs_reviewers_count,
+        review_requests_items: rest_items[0].clone(),
+        my_open_prs_items: rest_items[1].clone(),
+        needs_reviewers_items: no_reviewer_items,
     })
 }
