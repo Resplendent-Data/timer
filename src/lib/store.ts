@@ -51,6 +51,10 @@ export interface AppSettings {
   workdays: number[];
   /** Daily expected tracked hours used for progress targets */
   expectedHoursPerDay: number;
+  /** GitHub Personal Access Token for PR counts (optional) */
+  githubToken?: string;
+  /** GitHub username for PR counts (optional) */
+  githubUsername?: string;
 }
 
 /**
@@ -87,6 +91,8 @@ export async function getSettings(): Promise<AppSettings | null> {
   const workdayEnd = await store.get<string>("workdayEnd");
   const workdays = await store.get<number[]>("workdays");
   const expectedHoursPerDay = await store.get<number>("expectedHoursPerDay");
+  const githubToken = await store.get<string>("githubToken");
+  const githubUsername = await store.get<string>("githubUsername");
 
   // Return null if required fields are not set
   if (!apiKey || !teamId) {
@@ -111,6 +117,8 @@ export async function getSettings(): Promise<AppSettings | null> {
     workdays: normalizeWorkdays(workdays),
     expectedHoursPerDay:
       expectedHoursPerDay ?? DEFAULT_EXPECTED_HOURS_PER_DAY,
+    githubToken: githubToken ?? undefined,
+    githubUsername: githubUsername ?? undefined,
   };
 }
 
@@ -136,6 +144,8 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("workdayEnd", settings.workdayEnd);
   await store.set("workdays", normalizeWorkdays(settings.workdays));
   await store.set("expectedHoursPerDay", settings.expectedHoursPerDay);
+  await store.set("githubToken", settings.githubToken ?? "");
+  await store.set("githubUsername", settings.githubUsername ?? "");
   await store.save();
 }
 

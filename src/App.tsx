@@ -18,6 +18,7 @@ import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
 import { WorkProgress } from "./components/WorkProgress";
 import { Stats } from "./components/Stats";
+import { GitHubPrStatus } from "./components/GitHubPrStatus";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getSettings, getWidgetPosition, saveWidgetPosition, clearWidgetPosition } from "./lib/store";
 
@@ -248,6 +249,7 @@ function App() {
             </TabsList>
 
             <TabsContent value="status" className="space-y-4 mt-0 flex-1">
+              <GitHubPrStatus />
               <StatusIndicator status={idleStatus} />
               <WorkProgress status={idleStatus} />
               <TimerControls status={idleStatus} />

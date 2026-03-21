@@ -48,11 +48,14 @@ export function Settings({ onSave }: SettingsProps) {
     workdayEnd: "17:00",
     workdays: [...DEFAULT_WORK_DAYS],
     expectedHoursPerDay: DEFAULT_EXPECTED_HOURS_PER_DAY,
+    githubToken: "",
+    githubUsername: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showGithubToken, setShowGithubToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Auto-updater
@@ -232,6 +235,68 @@ export function Settings({ onSave }: SettingsProps) {
           <p className="text-[10px] text-muted-foreground">
             Stop timer after this many idle minutes
           </p>
+        </div>
+      </div>
+
+      {/* GitHub Settings */}
+      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
+        <div className="brutalist-label">GitHub (Optional)</div>
+
+        {/* Token */}
+        <div className="space-y-2">
+          <Label htmlFor="githubToken" className="text-xs uppercase tracking-wider">
+            Personal Access Token
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="githubToken"
+              type={showGithubToken ? "text" : "password"}
+              value={settings.githubToken ?? ""}
+              onChange={(e) =>
+                setSettings({ ...settings, githubToken: e.target.value })
+              }
+              placeholder="ghp_..."
+              autoComplete="off"
+              className="flex-1 text-sm"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowGithubToken(!showGithubToken)}
+              className="text-xs uppercase tracking-wider"
+            >
+              {showGithubToken ? "Hide" : "Show"}
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Needs <strong>repo</strong> scope.{" "}
+            <a
+              href="https://github.com/settings/tokens"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              Create token
+            </a>
+          </p>
+        </div>
+
+        {/* Username */}
+        <div className="space-y-2">
+          <Label htmlFor="githubUsername" className="text-xs uppercase tracking-wider">
+            Username
+          </Label>
+          <Input
+            id="githubUsername"
+            type="text"
+            value={settings.githubUsername ?? ""}
+            onChange={(e) =>
+              setSettings({ ...settings, githubUsername: e.target.value })
+            }
+            placeholder="octocat"
+            className="text-sm"
+          />
         </div>
       </div>
 

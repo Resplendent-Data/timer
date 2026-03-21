@@ -4,6 +4,7 @@
 //! when the user has been inactive for a configurable period.
 
 mod clickup;
+mod github;
 mod idle;
 mod idle_monitor;
 mod meeting_detection;
@@ -378,6 +379,15 @@ async fn get_clickup_team_leaderboard(
     clickup::get_clickup_team_leaderboard(api_key, team_id).await
 }
 
+/// Get GitHub PR counts for the authenticated user.
+#[tauri::command]
+async fn get_github_pr_counts(
+    token: String,
+    username: String,
+) -> Result<github::PrCounts, String> {
+    github::get_pr_counts(token, username).await
+}
+
 /// Record a heartbeat from the frontend (called every 30 seconds).
 /// Tracks whether the user is currently active or idle.
 #[tauri::command]
@@ -642,6 +652,7 @@ pub fn run() {
             send_notification_linux,
             get_productivity_stats,
             get_clickup_team_leaderboard,
+            get_github_pr_counts,
             record_heartbeat,
             record_timer_session,
             record_idle_event,
