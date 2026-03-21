@@ -14,6 +14,7 @@ import { useIdleChecker } from "./hooks/useIdleChecker";
 import { useActivityHeartbeat } from "./hooks/useActivityHeartbeat";
 import { useMeetingDetector } from "./hooks/useMeetingDetector";
 import { Settings } from "./components/Settings";
+import { useUpdater } from "./hooks/useUpdater";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
 import { WorkProgress } from "./components/WorkProgress";
@@ -34,6 +35,9 @@ function App() {
 
   // Start meeting detection prompt flow (runs every 20 seconds when enabled)
   useMeetingDetector(idleStatus);
+
+  // Auto-updater — runs on app start and checks hourly
+  const updater = useUpdater();
 
   // Create or close the widget window based on settings
   const updateWidgetState = useCallback(async (enabled: boolean) => {
@@ -260,7 +264,7 @@ function App() {
             </TabsContent>
 
             <TabsContent value="settings" className="mt-0 flex-1">
-              <Settings onSave={() => setActiveTab("status")} />
+              <Settings onSave={() => setActiveTab("status")} updater={updater} />
             </TabsContent>
           </Tabs>
         </div>

@@ -12,7 +12,7 @@ import {
   DEFAULT_EXPECTED_HOURS_PER_DAY,
   DEFAULT_WORK_DAYS,
 } from "../lib/store";
-import { useUpdater } from "../hooks/useUpdater";
+import { UseUpdaterResult } from "../hooks/useUpdater";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 
 interface SettingsProps {
   onSave?: () => void;
+  updater: UseUpdaterResult;
 }
 
 const WEEKDAY_OPTIONS = [
@@ -33,7 +34,7 @@ const WEEKDAY_OPTIONS = [
   { value: 6, label: "Sun" },
 ];
 
-export function Settings({ onSave }: SettingsProps) {
+export function Settings({ onSave, updater }: SettingsProps) {
   const [settings, setSettings] = useState<AppSettings>({
     clickupApiKey: "",
     clickupTeamId: "",
@@ -58,8 +59,6 @@ export function Settings({ onSave }: SettingsProps) {
   const [showGithubToken, setShowGithubToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-updater
-  const updater = useUpdater();
   const lastCheckedText =
     updater.lastCheckedAt === null
       ? "Never"
