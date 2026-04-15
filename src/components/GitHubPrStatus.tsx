@@ -9,8 +9,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { getSettings } from "@/lib/store";
 import { GitPullRequest, ExternalLink, X } from "lucide-react";
+import { AppSettings } from "@/lib/store";
 
 interface PrItem {
   title: string;
@@ -30,9 +30,14 @@ interface PrCounts {
 
 type PrCategory = "review" | "open" | "no_reviewers";
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const POLL_INTERVAL_MS = 15 * 60 * 1000;
 
-export function GitHubPrStatus() {
+interface GitHubPrStatusProps {
+  settings: AppSettings | null;
+  isVisible: boolean;
+}
+
+export function GitHubPrStatus({ settings, isVisible }: GitHubPrStatusProps) {
   const [counts, setCounts] = useState<PrCounts | null>(null);
   const [configured, setConfigured] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<PrCategory | null>(null);
@@ -40,7 +45,6 @@ export function GitHubPrStatus() {
 
   const fetchCounts = useCallback(async () => {
     try {
-      const settings = await getSettings();
       const token = settings?.githubToken?.trim();
       const username = settings?.githubUsername?.trim();
 
@@ -59,13 +63,17 @@ export function GitHubPrStatus() {
     } catch (error) {
       console.error("[GitHubPrStatus] Failed to fetch PR counts:", error);
     }
-  }, []);
+  }, [settings]);
 
   useEffect(() => {
+    if (!isVisible) {
+      return;
+    }
+
     fetchCounts();
-    const interval = setInterval(fetchCounts, POLL_INTERVAL_MS);
+    const interval = window.setInterval(fetchCounts, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchCounts]);
+  }, [fetchCounts, isVisible]);
 
   // Close panel when clicking outside
   useEffect(() => {

@@ -10,8 +10,8 @@ import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getLastUpdateCheckAt, setLastUpdateCheckAt } from "../lib/store";
 
-/** Update check interval in milliseconds (1 hour) */
-const UPDATE_CHECK_INTERVAL = 60 * 60 * 1000;
+/** Minimum time between automatic update checks. */
+const AUTO_UPDATE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 export interface UpdateInfo {
   version: string;
@@ -46,7 +46,15 @@ export interface UseUpdaterResult {
   statusMessage: string;
 }
 
-export function useUpdater(): UseUpdaterResult {
+interface UseUpdaterOptions {
+  isWindowVisible: boolean;
+  eagerCheck: boolean;
+}
+
+export function useUpdater({
+  isWindowVisible,
+  eagerCheck,
+}: UseUpdaterOptions): UseUpdaterResult {
   const [isChecking, setIsChecking] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -54,11 +62,12 @@ export function useUpdater(): UseUpdaterResult {
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState("0.0.0");
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [hasLoadedLastCheckedAt, setHasLoadedLastCheckedAt] = useState(false);
   const [statusMessage, setStatusMessage] = useState("You're up to date");
 
   const isUpdatingRef = useRef(false);
   const isCheckingRef = useRef(false);
-  const hasCheckedRef = useRef(false);
+  const lastAutoCheckAttemptRef = useRef<number | null>(null);
 
   // Get current version from Tauri
   useEffect(() => {
@@ -68,7 +77,10 @@ export function useUpdater(): UseUpdaterResult {
   }, []);
 
   useEffect(() => {
-    getLastUpdateCheckAt().then(setLastCheckedAt).catch(console.error);
+    getLastUpdateCheckAt()
+      .then(setLastCheckedAt)
+      .catch(console.error)
+      .finally(() => setHasLoadedLastCheckedAt(true));
   }, []);
 
   const performUpdate = useCallback(async (update: Update) => {
@@ -130,6 +142,7 @@ export function useUpdater(): UseUpdaterResult {
       const checkedAt = Date.now();
       setLastCheckedAt(checkedAt);
       void setLastUpdateCheckAt(checkedAt);
+      lastAutoCheckAttemptRef.current = checkedAt;
 
       try {
         const update = await check();
@@ -176,28 +189,24 @@ export function useUpdater(): UseUpdaterResult {
     return doCheck(true);
   }, [doCheck]);
 
-  // Check for updates on mount and set up interval (runs once)
   useEffect(() => {
-    // Prevent double-checking in React strict mode
-    if (hasCheckedRef.current) return;
-    hasCheckedRef.current = true;
+    if (!hasLoadedLastCheckedAt || !eagerCheck || !isWindowVisible) {
+      return;
+    }
 
-    // Initial check after a short delay to let the app settle
-    const initialTimeout = setTimeout(() => {
-      doCheck(false);
-    }, 3000);
+    const now = Date.now();
+    const lastKnownCheck =
+      lastCheckedAt ?? lastAutoCheckAttemptRef.current ?? 0;
+    if (lastKnownCheck > 0 && now - lastKnownCheck < AUTO_UPDATE_COOLDOWN_MS) {
+      return;
+    }
 
-    // Set up hourly check interval
-    const intervalId = setInterval(() => {
-      doCheck(false);
-    }, UPDATE_CHECK_INTERVAL);
+    const initialTimeout = window.setTimeout(() => {
+      void doCheck(false);
+    }, 1500);
 
-    return () => {
-      clearTimeout(initialTimeout);
-      clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => window.clearTimeout(initialTimeout);
+  }, [doCheck, eagerCheck, hasLoadedLastCheckedAt, isWindowVisible, lastCheckedAt]);
 
   return {
     isChecking,

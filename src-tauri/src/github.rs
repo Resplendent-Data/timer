@@ -1,6 +1,7 @@
 //! GitHub API client for fetching pull request counts and details.
 
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 /// A single pull request item returned to the frontend.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -102,12 +103,17 @@ fn github_headers(token: &str) -> Vec<(&'static str, String)> {
     ]
 }
 
+fn github_client() -> &'static reqwest::Client {
+    static GITHUB_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    GITHUB_CLIENT.get_or_init(reqwest::Client::new)
+}
+
 /// Fetch PR counts and details for the given GitHub user.
 ///
 /// Makes two GitHub Search API calls (review requests + open PRs) and one
 /// GraphQL call to find PRs with zero requested reviewers.
 pub async fn get_pr_counts(token: String, username: String) -> Result<PrCounts, String> {
-    let client = reqwest::Client::new();
+    let client = github_client();
 
     // --- REST search queries for review requests and open PRs ---
     let queries = [

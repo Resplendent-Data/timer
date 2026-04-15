@@ -17,7 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { normalizeWorkdays, parseTimeToMinutes } from "@/lib/workSchedule";
 import { IdleStatus } from "../hooks/useIdleChecker";
-import { getSettings } from "../lib/store";
+import { AppSettings } from "../lib/store";
 import { FocusChart } from "./stats/FocusChart";
 import { IdleHistory } from "./stats/IdleHistory";
 import { TeamLeaderboard, TeamLeaderboardResponse } from "./stats/TeamLeaderboard";
@@ -244,9 +244,12 @@ function runningSecondsTrackedToday(startTimeMs: number, nowMs: number): number 
 
 interface StatsProps {
   status: IdleStatus;
+  settings: AppSettings | null;
+  isVisible: boolean;
+  nowMs: number;
 }
 
-export function Stats({ status }: StatsProps) {
+export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
   const [stats, setStats] = useState<ProductivityStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<TeamLeaderboardResponse | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -254,13 +257,11 @@ export function Stats({ status }: StatsProps) {
   const [hasClickupConfig, setHasClickupConfig] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [clockMs, setClockMs] = useState(() => Date.now());
 
   const loadStats = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const settings = await getSettings();
       const clickupApiKey = settings?.clickupApiKey ?? "";
       const clickupTeamId = settings?.clickupTeamId ?? "";
       const clickupConfigured = Boolean(clickupApiKey && clickupTeamId);
@@ -315,22 +316,17 @@ export function Stats({ status }: StatsProps) {
       setLoading(false);
       setLeaderboardLoading(false);
     }
-  }, []);
+  }, [settings]);
 
   useEffect(() => {
+    if (!isVisible) {
+      return;
+    }
+
     loadStats();
-    const interval = setInterval(loadStats, 60000);
+    const interval = window.setInterval(loadStats, 60_000);
     return () => clearInterval(interval);
-  }, [loadStats]);
-
-  useEffect(() => {
-    if (!status.runningTaskStartMs) return;
-
-    setClockMs(Date.now());
-    const interval = window.setInterval(() => setClockMs(Date.now()), 1000);
-
-    return () => clearInterval(interval);
-  }, [status.runningTaskStartMs]);
+  }, [isVisible, loadStats]);
 
   if (loading && !stats) {
     return (
@@ -362,7 +358,7 @@ export function Stats({ status }: StatsProps) {
 
   const hasRunningTimer = status.runningTaskStartMs !== null;
   const runningTrackedSeconds = status.runningTaskStartMs
-    ? runningSecondsTrackedToday(status.runningTaskStartMs, clockMs)
+    ? runningSecondsTrackedToday(status.runningTaskStartMs, nowMs)
     : 0;
   const trackedTodaySeconds = stats.session_seconds_today + runningTrackedSeconds;
 

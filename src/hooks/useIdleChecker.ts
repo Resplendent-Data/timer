@@ -1,32 +1,27 @@
 /**
- * React hook for monitoring user idle time and managing ClickUp timers.
+ * Battery-first runtime scheduler for idle monitoring and timer state.
  *
- * This hook runs a background check every minute to:
- * 1. Get the current idle time from the Rust backend
- * 2. If idle exceeds threshold, stop any running ClickUp timer
- * 3. Show a notification when a timer is stopped
+ * This hook owns the app's essential background loop:
+ * - polls one Rust runtime snapshot instead of multiple native/network calls
+ * - records adaptive activity heartbeats for stats
+ * - updates tray/widget state at a coarse cadence
+ * - keeps the main UI smooth by letting the visible window interpolate locally
  */
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, emit, UnlistenFn } from "@tauri-apps/api/event";
+import { emit, listen, UnlistenFn } from "@tauri-apps/api/event";
 import { exit } from "@tauri-apps/plugin-process";
 import { sendNotification } from "../lib/notification";
-import { getSettings, addRecentTask } from "../lib/store";
+import { AppSettings, addRecentTask } from "../lib/store";
 import { isWithinWorkSchedule } from "../lib/workSchedule";
 
-/** Result returned from the Rust check_and_stop_timer command */
-interface IdleCheckResult {
-  stopped: boolean;
-  task_name: string | null;
-  task_id: string | null;
-  description: string | null;
-  is_manual: boolean;
-  tags: TimeEntryTag[];
-  billable: boolean;
-  idle_duration: number;
-  error: string | null;
-}
+/** Battery-first visible runtime poll cadence. */
+const VISIBLE_RUNTIME_INTERVAL_MS = 15_000;
+/** Hidden-to-tray runtime cadence. */
+const HIDDEN_RUNTIME_INTERVAL_MS = 60_000;
+/** Idle threshold lower bound used for stats classification. */
+const MIN_IDLE_THRESHOLD_SECS = 60;
 
 /** Time entry tag from ClickUp */
 interface TimeEntryTag {
@@ -47,53 +42,45 @@ interface RunningTimerInfo {
   billable: boolean;
 }
 
+/** Result returned from the Rust poll_runtime command */
+interface RuntimeSnapshot {
+  idle_duration: number;
+  running_timer: RunningTimerInfo | null;
+  stopped: boolean;
+  stopped_task_name: string | null;
+  stopped_task_id: string | null;
+  stopped_description: string | null;
+  stopped_is_manual: boolean;
+  stopped_tags: TimeEntryTag[];
+  stopped_billable: boolean;
+  error: string | null;
+}
+
 /** Current status of the idle checker */
 export interface IdleStatus {
-  /** Whether the checker is running */
   isRunning: boolean;
-  /** Current idle time in seconds */
   currentIdleSeconds: number;
-  /** ID of the current time entry (for rt-tag detection) */
+  lastIdleSampledAtMs: number | null;
   runningTimerId: string | null;
-  /** Name of the currently running task (if any) */
   runningTaskName: string | null;
-  /** ID of the currently running task (if any, null for manual timers) */
   runningTaskId: string | null;
-  /** Start time of the running timer (for elapsed time calculation) */
   runningTaskStartMs: number | null;
-  /** Whether the running timer is a manual timer (no task) */
   runningTimerIsManual: boolean;
-  /** Description of the running timer (for manual timers) */
   runningTimerDescription: string | null;
-  /** Tags on the running timer */
   runningTimerTags: TimeEntryTag[];
-  /** Whether the running timer is billable */
   runningTimerBillable: boolean;
-  /** Last time a timer was stopped */
   lastStoppedAt: Date | null;
-  /** Last stopped task name */
   lastStoppedTaskName: string | null;
-  /** Last stopped task ID (for resume functionality) */
   lastStoppedTaskId: string | null;
-  /** Whether the last stopped timer was manual */
   lastStoppedTimerIsManual: boolean;
-  /** Description of the last stopped timer (manual timers) */
   lastStoppedTimerDescription: string | null;
-  /** Tags from the last stopped timer */
   lastStoppedTimerTags: TimeEntryTag[];
-  /** Whether the last stopped timer was billable */
   lastStoppedTimerBillable: boolean;
-  /** Error message if something went wrong */
   error: string | null;
-  /** Last time we sent a "no timer" warning */
   lastNoTimerWarningAt: Date | null;
-  /** Function to manually refresh the status */
   refresh: () => Promise<void>;
 }
 
-/**
- * Format elapsed time as H:MM:SS or M:SS.
- */
 function formatElapsedTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -101,81 +88,69 @@ function formatElapsedTime(ms: number): string {
   const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
   }
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-/**
- * Update the tray menu timer display text.
- */
-async function updateTrayDisplay(
-  taskName: string | null,
-  startTimeMs: number | null
-): Promise<void> {
+async function updateTrayDisplay(timer: RunningTimerInfo | null): Promise<void> {
+  const text =
+    timer && timer.start_time_ms
+      ? `${timer.name} - ${formatElapsedTime(Date.now() - timer.start_time_ms)}`
+      : "No timer running";
+
   try {
-    if (taskName && startTimeMs) {
-      const elapsed = Date.now() - startTimeMs;
-      await invoke("update_tray_timer_display", {
-        text: `${taskName} - ${formatElapsedTime(elapsed)}`,
-      });
-    } else {
-      await invoke("update_tray_timer_display", {
-        text: "No timer running",
-      });
-    }
-  } catch (e) {
-    console.error("Failed to update tray display:", e);
+    await invoke("update_tray_timer_display", { text });
+  } catch (error) {
+    console.error("Failed to update tray display:", error);
   }
 }
 
-/**
- * Emit timer state to the widget window.
- */
-async function emitWidgetUpdate(
-  taskName: string | null,
-  startTimeMs: number | null
-): Promise<void> {
+async function emitWidgetUpdate(timer: RunningTimerInfo | null): Promise<void> {
   try {
     await emit("widget-timer-update", {
-      taskName,
-      startTimeMs,
+      taskName: timer?.name ?? null,
+      startTimeMs: timer?.start_time_ms ?? null,
     });
-  } catch (e) {
-    // Widget may not exist, ignore errors
+  } catch {
+    // Widget may not exist; ignore.
   }
 }
 
-/**
- * Hook that monitors idle time and automatically stops ClickUp timers.
- *
- * @param checkIntervalMs - How often to check idle time (default: 60000ms = 1 minute)
- * @returns Current idle status
- */
-export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
-  const intervalRef = useRef<number | null>(null);
-  /** Timestamp (ms) when we last saw a running timer */
+function idleThresholdSecs(settings: AppSettings | null): number {
+  return Math.max(
+    MIN_IDLE_THRESHOLD_SECS,
+    (settings?.idleThresholdMinutes ?? 10) * 60
+  );
+}
+
+export function useIdleChecker(
+  settings: AppSettings | null,
+  isWindowVisible: boolean
+): IdleStatus {
+  const timeoutRef = useRef<number | null>(null);
+  const settingsRef = useRef<AppSettings | null>(settings);
+  const visibilityRef = useRef(isWindowVisible);
+  const lastHeartbeatAtRef = useRef<number | null>(null);
   const lastTimerSeenAtRef = useRef<number | null>(null);
-  /** Timestamp (ms) when we last sent a "no timer" warning */
   const lastNoTimerWarningAtRef = useRef<number | null>(null);
-  /** Task ID of the last running timer we added to recent tasks */
   const lastAddedTaskIdRef = useRef<string | null>(null);
-  /** Whether the user was active (not idle) on the previous check - used to detect idle→active transitions */
-  const wasActiveRef = useRef<boolean>(true);
-  /** Interval for fast tray updates (10s) when timer is running */
-  const trayIntervalRef = useRef<number | null>(null);
-  /** Set of time entry IDs we've already added the rt tag to (to avoid duplicate calls) */
+  const wasActiveRef = useRef(true);
   const taggedTimerIdsRef = useRef<Set<string>>(new Set());
-  /** Most recent running timer seen, used to capture manual stop metadata */
   const lastRunningTimerRef = useRef<RunningTimerInfo | null>(null);
-  /** Start timestamp of the current off-hours segment (repeat-warning pause window) */
   const repeatOffHoursPauseStartedAtRef = useRef<number | null>(null);
-  /** Accumulated off-hours duration for the current repeat-warning cycle */
   const repeatOffHoursPausedMsRef = useRef(0);
+  const isPollingRef = useRef(false);
+  const lastWidgetSignatureRef = useRef<string | null>(null);
+  const trayHadRunningTimerRef = useRef(false);
+  const pollRuntimeRef = useRef<() => Promise<void>>(async () => {});
 
   const [status, setStatus] = useState<IdleStatus>({
     isRunning: false,
     currentIdleSeconds: 0,
+    lastIdleSampledAtMs: null,
     runningTimerId: null,
     runningTaskName: null,
     runningTaskId: null,
@@ -196,57 +171,345 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
     refresh: async () => {},
   });
 
-  const checkIdle = useCallback(async () => {
-    try {
-      const settings = await getSettings();
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
-      if (!settings) {
-        setStatus((prev) => ({
-          ...prev,
-          error: "Not configured. Please add your ClickUp settings.",
-        }));
+  useEffect(() => {
+    visibilityRef.current = isWindowVisible;
+  }, [isWindowVisible]);
+
+  const syncDisplays = useCallback(async (timer: RunningTimerInfo | null) => {
+    const hadRunningTimer = trayHadRunningTimerRef.current;
+    if (timer) {
+      await updateTrayDisplay(timer);
+      trayHadRunningTimerRef.current = true;
+    } else if (!hadRunningTimer) {
+      return;
+    } else {
+      await updateTrayDisplay(null);
+      trayHadRunningTimerRef.current = false;
+    }
+
+    const widgetSignature = timer
+      ? `${timer.id}:${timer.start_time_ms}`
+      : "no-timer";
+    if (widgetSignature !== lastWidgetSignatureRef.current) {
+      lastWidgetSignatureRef.current = widgetSignature;
+      await emitWidgetUpdate(timer);
+    }
+  }, []);
+
+  const recordHeartbeat = useCallback(async (idleSeconds: number) => {
+    const now = Date.now();
+    const previous = lastHeartbeatAtRef.current;
+    lastHeartbeatAtRef.current = now;
+
+    if (previous === null) {
+      return;
+    }
+
+    const durationSecs = Math.max(1, Math.round((now - previous) / 1000));
+    await invoke("record_heartbeat", {
+      isIdle: idleSeconds >= idleThresholdSecs(settingsRef.current),
+      durationSecs,
+    });
+  }, []);
+
+  const handleNoTimerWarning = useCallback(
+    async (idleSeconds: number, hasRunningTimer: boolean) => {
+      const currentSettings = settingsRef.current;
+      if (!currentSettings?.noTimerWarningEnabled || hasRunningTimer) {
+        repeatOffHoursPauseStartedAtRef.current = null;
+        repeatOffHoursPausedMsRef.current = 0;
         return;
       }
 
-      // Calculate threshold in seconds
-      const thresholdSecs = settings.idleThresholdMinutes * 60;
+      const now = Date.now();
+      const warningThresholdMs = currentSettings.noTimerWarningMinutes * 60 * 1000;
+      const isUserActive = idleSeconds < 120;
 
-      // Call Rust backend to check idle and potentially stop timer
-      const result = await invoke<IdleCheckResult>("check_and_stop_timer", {
-        apiKey: settings.clickupApiKey,
-        teamId: settings.clickupTeamId,
-        idleThresholdSecs: thresholdSecs,
+      if (isUserActive && !wasActiveRef.current) {
+        lastTimerSeenAtRef.current = now;
+      }
+      wasActiveRef.current = isUserActive;
+
+      if (lastTimerSeenAtRef.current === null) {
+        lastTimerSeenAtRef.current = now;
+      }
+
+      const timeSinceLastTimer = now - lastTimerSeenAtRef.current;
+      const lastNoTimerWarningAt = lastNoTimerWarningAtRef.current;
+      let shouldWarn = false;
+
+      if (isUserActive && timeSinceLastTimer >= warningThresholdMs) {
+        if (!currentSettings.noTimerWarningRepeat) {
+          shouldWarn = lastNoTimerWarningAt === null;
+          repeatOffHoursPauseStartedAtRef.current = null;
+          repeatOffHoursPausedMsRef.current = 0;
+        } else if (lastNoTimerWarningAt === null) {
+          shouldWarn = true;
+          repeatOffHoursPauseStartedAtRef.current = null;
+          repeatOffHoursPausedMsRef.current = 0;
+        } else if (!currentSettings.noTimerWarningRepeatOnlyDuringWorkHours) {
+          shouldWarn = now - lastNoTimerWarningAt >= warningThresholdMs;
+          repeatOffHoursPauseStartedAtRef.current = null;
+          repeatOffHoursPausedMsRef.current = 0;
+        } else {
+          const inWorkHours = isWithinWorkSchedule(
+            new Date(now),
+            currentSettings.workdayStart,
+            currentSettings.workdayEnd,
+            currentSettings.workdays
+          );
+
+          if (!inWorkHours) {
+            if (repeatOffHoursPauseStartedAtRef.current === null) {
+              repeatOffHoursPauseStartedAtRef.current = now;
+            }
+          } else if (repeatOffHoursPauseStartedAtRef.current !== null) {
+            repeatOffHoursPausedMsRef.current +=
+              now - repeatOffHoursPauseStartedAtRef.current;
+            repeatOffHoursPauseStartedAtRef.current = null;
+          }
+
+          const accumulatedPausedMs =
+            repeatOffHoursPausedMsRef.current +
+            (repeatOffHoursPauseStartedAtRef.current !== null
+              ? now - repeatOffHoursPauseStartedAtRef.current
+              : 0);
+
+          shouldWarn =
+            inWorkHours &&
+            Math.max(0, now - lastNoTimerWarningAt - accumulatedPausedMs) >=
+              warningThresholdMs;
+        }
+      }
+
+      if (!shouldWarn) {
+        return;
+      }
+
+      const minutesWithoutTimer = Math.floor(timeSinceLastTimer / 60_000);
+      await sendNotification({
+        title: "No Timer Running",
+        body: `You've been active for ${minutesWithoutTimer} minute${
+          minutesWithoutTimer !== 1 ? "s" : ""
+        } without a timer.`,
       });
 
-      // Update status with current idle time
+      lastNoTimerWarningAtRef.current = now;
+      repeatOffHoursPauseStartedAtRef.current = null;
+      repeatOffHoursPausedMsRef.current = 0;
+      setStatus((prev) => ({
+        ...prev,
+        lastNoTimerWarningAt: new Date(now),
+      }));
+    },
+    []
+  );
+
+  const applyRunningTimer = useCallback(
+    async (timer: RunningTimerInfo | null, idleSeconds: number, sampledAtMs: number) => {
+      const currentSettings = settingsRef.current;
+      const hasRunningTimer = timer !== null;
+
+      if (hasRunningTimer && timer) {
+        lastRunningTimerRef.current = timer;
+        lastTimerSeenAtRef.current = sampledAtMs;
+        lastNoTimerWarningAtRef.current = null;
+        repeatOffHoursPauseStartedAtRef.current = null;
+        repeatOffHoursPausedMsRef.current = 0;
+
+        if (timer.task_id && timer.task_id !== lastAddedTaskIdRef.current) {
+          lastAddedTaskIdRef.current = timer.task_id;
+          addRecentTask({ id: timer.task_id, name: timer.name }).catch((error) => {
+            console.error("[useIdleChecker] Failed to add recent task:", error);
+          });
+        }
+
+        const hasRtTag = timer.tags.some((tag) => tag.name === "rt");
+        const alreadyTagged = taggedTimerIdsRef.current.has(timer.id);
+        if (
+          currentSettings?.clickupApiKey &&
+          currentSettings?.clickupTeamId &&
+          !hasRtTag &&
+          !alreadyTagged
+        ) {
+          taggedTimerIdsRef.current.add(timer.id);
+          invoke("add_rt_tag_to_time_entry", {
+            apiKey: currentSettings.clickupApiKey,
+            teamId: currentSettings.clickupTeamId,
+            timeEntryId: timer.id,
+            existingTags: timer.tags,
+          }).catch((error) => {
+            console.error("[useIdleChecker] Failed to add rt tag:", error);
+            taggedTimerIdsRef.current.delete(timer.id);
+          });
+        }
+      } else {
+        lastAddedTaskIdRef.current = null;
+        const lastRunningTimer = lastRunningTimerRef.current;
+        if (lastRunningTimer) {
+          setStatus((prev) => ({
+            ...prev,
+            lastStoppedAt: new Date(sampledAtMs),
+            lastStoppedTaskName: lastRunningTimer.name,
+            lastStoppedTaskId: lastRunningTimer.task_id,
+            lastStoppedTimerIsManual: lastRunningTimer.is_manual,
+            lastStoppedTimerDescription: lastRunningTimer.description,
+            lastStoppedTimerTags: lastRunningTimer.tags,
+            lastStoppedTimerBillable: lastRunningTimer.billable,
+          }));
+          lastRunningTimerRef.current = null;
+        }
+      }
+
+      setStatus((prev) => ({
+        ...prev,
+        currentIdleSeconds: idleSeconds,
+        lastIdleSampledAtMs: sampledAtMs,
+        runningTimerId: timer?.id ?? null,
+        runningTaskName: timer?.name ?? null,
+        runningTaskId: timer?.task_id ?? null,
+        runningTaskStartMs: timer?.start_time_ms ?? null,
+        runningTimerIsManual: timer?.is_manual ?? false,
+        runningTimerDescription: timer?.description ?? null,
+        runningTimerTags: timer?.tags ?? [],
+        runningTimerBillable: timer?.billable ?? false,
+      }));
+
+      await handleNoTimerWarning(idleSeconds, hasRunningTimer);
+      await syncDisplays(timer);
+    },
+    [handleNoTimerWarning, syncDisplays]
+  );
+
+  const stopTimerForEvent = useCallback(async (reason: string): Promise<boolean> => {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings?.clickupApiKey || !currentSettings?.clickupTeamId) {
+      return false;
+    }
+
+    const timerInfo = lastRunningTimerRef.current;
+    if (!timerInfo) {
+      return false;
+    }
+
+    await invoke("stop_timer", {
+      apiKey: currentSettings.clickupApiKey,
+      teamId: currentSettings.clickupTeamId,
+    });
+
+    await sendNotification({
+      title: "Timer Stopped",
+      body: `Timer stopped on "${timerInfo.name}" because ${reason}`,
+    });
+
+    const now = Date.now();
+    lastRunningTimerRef.current = null;
+    setStatus((prev) => ({
+      ...prev,
+      lastStoppedAt: new Date(now),
+      lastStoppedTaskName: timerInfo.name,
+      lastStoppedTaskId: timerInfo.task_id,
+      lastStoppedTimerIsManual: timerInfo.is_manual,
+      lastStoppedTimerDescription: timerInfo.description,
+      lastStoppedTimerTags: timerInfo.tags,
+      lastStoppedTimerBillable: timerInfo.billable,
+      runningTimerId: null,
+      runningTaskName: null,
+      runningTaskId: null,
+      runningTaskStartMs: null,
+      runningTimerIsManual: false,
+      runningTimerDescription: null,
+      runningTimerTags: [],
+      runningTimerBillable: false,
+    }));
+
+    await syncDisplays(null);
+    return true;
+  }, [syncDisplays]);
+
+  const scheduleNextPoll = useCallback(() => {
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    timeoutRef.current = window.setTimeout(() => {
+      void pollRuntimeRef.current();
+    }, visibilityRef.current ? VISIBLE_RUNTIME_INTERVAL_MS : HIDDEN_RUNTIME_INTERVAL_MS);
+  }, []);
+
+  const pollRuntime = useCallback(async () => {
+    if (isPollingRef.current) {
+      return;
+    }
+
+    isPollingRef.current = true;
+    const currentSettings = settingsRef.current;
+
+    try {
+      let snapshot: RuntimeSnapshot;
+
+      if (currentSettings?.clickupApiKey && currentSettings?.clickupTeamId) {
+        snapshot = await invoke<RuntimeSnapshot>("poll_runtime", {
+          apiKey: currentSettings.clickupApiKey,
+          teamId: currentSettings.clickupTeamId,
+          idleThresholdSecs: idleThresholdSecs(currentSettings),
+        });
+      } else {
+        const idleDuration = await invoke<number>("get_idle_time");
+        snapshot = {
+          idle_duration: idleDuration,
+          running_timer: null,
+          stopped: false,
+          stopped_task_name: null,
+          stopped_task_id: null,
+          stopped_description: null,
+          stopped_is_manual: false,
+          stopped_tags: [],
+          stopped_billable: false,
+          error: null,
+        };
+      }
+
+      const sampledAtMs = Date.now();
+      await recordHeartbeat(snapshot.idle_duration);
+
       setStatus((prev) => ({
         ...prev,
         isRunning: true,
-        currentIdleSeconds: result.idle_duration,
-        error: result.error,
+        currentIdleSeconds: snapshot.idle_duration,
+        lastIdleSampledAtMs: sampledAtMs,
+        error:
+          snapshot.error ??
+          (currentSettings ? null : "Not configured. Please add your ClickUp settings."),
       }));
 
-      // If a timer was stopped, show notification and update state
-      if (result.stopped) {
+      if (snapshot.stopped) {
         const stoppedName =
-          result.task_name ||
-          result.description?.trim() ||
-          (result.is_manual ? "Manual Timer" : "Timer");
-        const idleMinutes = Math.floor(result.idle_duration / 60);
+          snapshot.stopped_task_name ||
+          snapshot.stopped_description?.trim() ||
+          (snapshot.stopped_is_manual ? "Manual Timer" : "Timer");
+        const idleMinutes = Math.floor(snapshot.idle_duration / 60);
+
         await sendNotification({
           title: "Timer Stopped",
           body: `Timer stopped due to inactivity on "${stoppedName}" (idle for ${idleMinutes} minutes)`,
         });
 
+        lastRunningTimerRef.current = null;
         setStatus((prev) => ({
           ...prev,
-          lastStoppedAt: new Date(),
+          lastStoppedAt: new Date(sampledAtMs),
           lastStoppedTaskName: stoppedName,
-          lastStoppedTaskId: result.task_id,
-          lastStoppedTimerIsManual: result.is_manual,
-          lastStoppedTimerDescription: result.description,
-          lastStoppedTimerTags: result.tags,
-          lastStoppedTimerBillable: result.billable,
+          lastStoppedTaskId: snapshot.stopped_task_id,
+          lastStoppedTimerIsManual: snapshot.stopped_is_manual,
+          lastStoppedTimerDescription: snapshot.stopped_description,
+          lastStoppedTimerTags: snapshot.stopped_tags,
+          lastStoppedTimerBillable: snapshot.stopped_billable,
           runningTimerId: null,
           runningTaskName: null,
           runningTaskId: null,
@@ -256,409 +519,85 @@ export function useIdleChecker(checkIntervalMs: number = 60_000): IdleStatus {
           runningTimerTags: [],
           runningTimerBillable: false,
         }));
-        lastRunningTimerRef.current = null;
-      }
 
-      // Also fetch current running timer info for display
-      if (!result.stopped) {
-        try {
-          const timerInfo = await invoke<RunningTimerInfo | null>(
-            "get_running_timer_info",
-            {
-              apiKey: settings.clickupApiKey,
-              teamId: settings.clickupTeamId,
-            }
-          );
-
-          const hasRunningTimer = timerInfo !== null;
-
-          if (hasRunningTimer) {
-            lastRunningTimerRef.current = timerInfo;
-
-            // Timer is running - update lastTimerSeenAt and reset warning state
-            lastTimerSeenAtRef.current = Date.now();
-            lastNoTimerWarningAtRef.current = null;
-            repeatOffHoursPauseStartedAtRef.current = null;
-            repeatOffHoursPausedMsRef.current = 0;
-
-            // Add to recent tasks if this is a new task we haven't tracked yet
-            // (only if task has a task_id - manual timers without tasks won't be added)
-            if (timerInfo.task_id && timerInfo.task_id !== lastAddedTaskIdRef.current) {
-              lastAddedTaskIdRef.current = timerInfo.task_id;
-              console.log("[useIdleChecker] Adding running task to recent:", timerInfo.name);
-              addRecentTask({
-                id: timerInfo.task_id,
-                name: timerInfo.name,
-              }).catch((err) => {
-                console.error("[useIdleChecker] Failed to add recent task:", err);
-              });
-            }
-
-            // Check if running timer needs the "rt" tag added (for externally-started timers)
-            const hasRtTag = timerInfo.tags.some((t) => t.name === "rt");
-            const alreadyTagged = taggedTimerIdsRef.current.has(timerInfo.id);
-            
-            if (!hasRtTag && !alreadyTagged) {
-              console.log("[useIdleChecker] Adding rt tag to externally-started timer:", timerInfo.id);
-              taggedTimerIdsRef.current.add(timerInfo.id);
-              
-              invoke("add_rt_tag_to_time_entry", {
-                apiKey: settings.clickupApiKey,
-                teamId: settings.clickupTeamId,
-                timeEntryId: timerInfo.id,
-                existingTags: timerInfo.tags,
-              }).then((added) => {
-                if (added) {
-                  console.log("[useIdleChecker] Successfully added rt tag to time entry:", timerInfo.id);
-                }
-              }).catch((err) => {
-                console.error("[useIdleChecker] Failed to add rt tag:", err);
-                // Remove from tracked set so we can retry next poll
-                taggedTimerIdsRef.current.delete(timerInfo.id);
-              });
-            }
-          } else {
-            // No timer running - reset the last added task ID so we can add it again later
-            lastAddedTaskIdRef.current = null;
-
-            // Detect timer stop events (e.g., manual stop button) and preserve resume metadata.
-            const lastRunningTimer = lastRunningTimerRef.current;
-            if (lastRunningTimer) {
-              setStatus((prev) => ({
-                ...prev,
-                lastStoppedAt: new Date(),
-                lastStoppedTaskName: lastRunningTimer.name,
-                lastStoppedTaskId: lastRunningTimer.task_id,
-                lastStoppedTimerIsManual: lastRunningTimer.is_manual,
-                lastStoppedTimerDescription: lastRunningTimer.description,
-                lastStoppedTimerTags: lastRunningTimer.tags,
-                lastStoppedTimerBillable: lastRunningTimer.billable,
-              }));
-              lastRunningTimerRef.current = null;
-            }
-          }
-
-          setStatus((prev) => ({
-            ...prev,
-            runningTimerId: timerInfo?.id ?? null,
-            runningTaskName: timerInfo?.name ?? null,
-            runningTaskId: timerInfo?.task_id ?? null,
-            runningTaskStartMs: timerInfo?.start_time_ms ?? null,
-            runningTimerIsManual: timerInfo?.is_manual ?? false,
-            runningTimerDescription: timerInfo?.description ?? null,
-            runningTimerTags: timerInfo?.tags ?? [],
-            runningTimerBillable: timerInfo?.billable ?? false,
-          }));
-
-          // Update tray display with current timer info
-          await updateTrayDisplay(
-            timerInfo?.name ?? null,
-            timerInfo?.start_time_ms ?? null
-          );
-
-          // Update widget with current timer info
-          await emitWidgetUpdate(
-            timerInfo?.name ?? null,
-            timerInfo?.start_time_ms ?? null
-          );
-
-          // Check if we should warn about no timer running
-          if (
-            !hasRunningTimer &&
-            settings.noTimerWarningEnabled
-          ) {
-            const now = Date.now();
-            const warningThresholdMs = settings.noTimerWarningMinutes * 60 * 1000;
-            
-            // Consider user "active" if idle less than 2 minutes
-            const isUserActive = result.idle_duration < 120;
-
-            // Reset "time without timer" if user just became active after being idle
-            // This prevents showing huge numbers after waking from sleep/idle
-            if (isUserActive && !wasActiveRef.current) {
-              lastTimerSeenAtRef.current = now;
-            }
-            wasActiveRef.current = isUserActive;
-
-            // Initialize lastTimerSeenAt if this is the first check with no timer
-            if (lastTimerSeenAtRef.current === null) {
-              lastTimerSeenAtRef.current = now;
-            }
-
-            const timeSinceLastTimer = now - lastTimerSeenAtRef.current;
-            const lastNoTimerWarningAt = lastNoTimerWarningAtRef.current;
-            let shouldWarn = false;
-
-            if (isUserActive && timeSinceLastTimer >= warningThresholdMs) {
-              if (!settings.noTimerWarningRepeat) {
-                // One-shot mode: warn once until a timer starts.
-                shouldWarn = lastNoTimerWarningAt === null;
-                repeatOffHoursPauseStartedAtRef.current = null;
-                repeatOffHoursPausedMsRef.current = 0;
-              } else if (lastNoTimerWarningAt === null) {
-                // Keep first-warning behavior unchanged even when work-hours gate is on.
-                shouldWarn = true;
-                repeatOffHoursPauseStartedAtRef.current = null;
-                repeatOffHoursPausedMsRef.current = 0;
-              } else if (!settings.noTimerWarningRepeatOnlyDuringWorkHours) {
-                const timeSinceLastWarning = now - lastNoTimerWarningAt;
-                shouldWarn = timeSinceLastWarning >= warningThresholdMs;
-                repeatOffHoursPauseStartedAtRef.current = null;
-                repeatOffHoursPausedMsRef.current = 0;
-              } else {
-                const inWorkHours = isWithinWorkSchedule(
-                  new Date(now),
-                  settings.workdayStart,
-                  settings.workdayEnd,
-                  settings.workdays
-                );
-
-                if (!inWorkHours) {
-                  if (repeatOffHoursPauseStartedAtRef.current === null) {
-                    repeatOffHoursPauseStartedAtRef.current = now;
-                  }
-                } else if (repeatOffHoursPauseStartedAtRef.current !== null) {
-                  repeatOffHoursPausedMsRef.current +=
-                    now - repeatOffHoursPauseStartedAtRef.current;
-                  repeatOffHoursPauseStartedAtRef.current = null;
-                }
-
-                const accumulatedPausedMs =
-                  repeatOffHoursPausedMsRef.current +
-                  (repeatOffHoursPauseStartedAtRef.current !== null
-                    ? now - repeatOffHoursPauseStartedAtRef.current
-                    : 0);
-
-                const effectiveTimeSinceLastWarning = Math.max(
-                  0,
-                  now - lastNoTimerWarningAt - accumulatedPausedMs
-                );
-
-                shouldWarn =
-                  inWorkHours && effectiveTimeSinceLastWarning >= warningThresholdMs;
-              }
-            }
-
-            if (shouldWarn) {
-              const minutesWithoutTimer = Math.floor(timeSinceLastTimer / 60000);
-              await sendNotification({
-                title: "No Timer Running",
-                body: `You've been active for ${minutesWithoutTimer} minute${minutesWithoutTimer !== 1 ? "s" : ""} without a timer.`,
-              });
-
-              lastNoTimerWarningAtRef.current = now;
-              repeatOffHoursPauseStartedAtRef.current = null;
-              repeatOffHoursPausedMsRef.current = 0;
-              setStatus((prev) => ({
-                ...prev,
-                lastNoTimerWarningAt: new Date(now),
-              }));
-            }
-          } else {
-            repeatOffHoursPauseStartedAtRef.current = null;
-            repeatOffHoursPausedMsRef.current = 0;
-          }
-        } catch {
-          // Ignore errors fetching running timer
-        }
+        await syncDisplays(null);
+        await handleNoTimerWarning(snapshot.idle_duration, false);
+      } else {
+        await applyRunningTimer(
+          snapshot.running_timer,
+          snapshot.idle_duration,
+          sampledAtMs
+        );
       }
     } catch (error) {
-      console.error("Idle check failed:", error);
+      console.error("Runtime poll failed:", error);
       setStatus((prev) => ({
         ...prev,
+        isRunning: true,
         error: error instanceof Error ? error.message : String(error),
       }));
+    } finally {
+      isPollingRef.current = false;
+      scheduleNextPoll();
     }
-  }, []);
+  }, [applyRunningTimer, handleNoTimerWarning, recordHeartbeat, scheduleNextPoll, syncDisplays]);
 
-  // Start the interval on mount
   useEffect(() => {
-    // Run immediately on mount
-    checkIdle();
+    pollRuntimeRef.current = pollRuntime;
+  }, [pollRuntime]);
 
-    // Then run every interval
-    intervalRef.current = window.setInterval(checkIdle, checkIntervalMs);
+  useEffect(() => {
+    void pollRuntime();
+  }, [pollRuntime, settings, isWindowVisible]);
 
-    setStatus((prev) => ({ ...prev, isRunning: true }));
-
-    // Listen for system sleep events (macOS lid close / display sleep)
+  useEffect(() => {
     let unlistenSleep: UnlistenFn | null = null;
     let unlistenShutdown: UnlistenFn | null = null;
     let unlistenQuit: UnlistenFn | null = null;
 
-    /**
-     * Stop any running timer and update UI state.
-     * Shared logic for sleep, shutdown, and app quit events.
-     */
-    const stopTimerForEvent = async (reason: string): Promise<boolean> => {
-      const settings = await getSettings();
-      if (!settings?.clickupApiKey || !settings?.clickupTeamId) return false;
-
-      const timerInfo = await invoke<RunningTimerInfo | null>(
-        "get_running_timer_info",
-        {
-          apiKey: settings.clickupApiKey,
-          teamId: settings.clickupTeamId,
-        }
-      );
-
-      if (timerInfo) {
-        await invoke("stop_timer", {
-          apiKey: settings.clickupApiKey,
-          teamId: settings.clickupTeamId,
-        });
-
-        await sendNotification({
-          title: "Timer Stopped",
-          body: `Timer stopped on "${timerInfo.name}" because ${reason}`,
-        });
-
-        setStatus((prev) => ({
-          ...prev,
-          lastStoppedAt: new Date(),
-          lastStoppedTaskName: timerInfo.name,
-          lastStoppedTaskId: timerInfo.task_id,
-          lastStoppedTimerIsManual: timerInfo.is_manual,
-          lastStoppedTimerDescription: timerInfo.description,
-          lastStoppedTimerTags: timerInfo.tags,
-          lastStoppedTimerBillable: timerInfo.billable,
-          runningTimerId: null,
-          runningTaskName: null,
-          runningTaskId: null,
-          runningTaskStartMs: null,
-          runningTimerIsManual: false,
-          runningTimerDescription: null,
-          runningTimerTags: [],
-          runningTimerBillable: false,
-        }));
-
-        await updateTrayDisplay(null, null);
-        await emitWidgetUpdate(null, null);
-        return true;
-      }
-      return false;
-    };
-
-    const setupSleepListener = async () => {
+    const setup = async () => {
       unlistenSleep = await listen("system-sleep", async () => {
-        console.log("[useIdleChecker] System sleep detected, stopping timer");
         try {
           await stopTimerForEvent("your computer went to sleep");
         } catch (error) {
           console.error("[useIdleChecker] Failed to stop timer on sleep:", error);
         }
       });
-    };
 
-    const setupShutdownListener = async () => {
       unlistenShutdown = await listen("system-shutdown", async () => {
-        console.log("[useIdleChecker] System shutdown detected, stopping timer");
         try {
           await stopTimerForEvent("your computer is shutting down");
         } catch (error) {
           console.error("[useIdleChecker] Failed to stop timer on shutdown:", error);
         }
       });
-    };
 
-    const setupQuitListener = async () => {
       unlistenQuit = await listen("app-quit-requested", async () => {
-        console.log("[useIdleChecker] App quit requested, stopping timer before exit");
         try {
           await stopTimerForEvent("the app is closing");
         } catch (error) {
           console.error("[useIdleChecker] Failed to stop timer on quit:", error);
         } finally {
-          // Always exit the app, even if timer stop failed
           await exit(0);
         }
       });
     };
 
-    setupSleepListener();
-    setupShutdownListener();
-    setupQuitListener();
+    void setup();
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
-      if (unlistenSleep) {
-        unlistenSleep();
-      }
-      if (unlistenShutdown) {
-        unlistenShutdown();
-      }
-      if (unlistenQuit) {
-        unlistenQuit();
-      }
-      setStatus((prev) => ({ ...prev, isRunning: false }));
+      if (unlistenSleep) unlistenSleep();
+      if (unlistenShutdown) unlistenShutdown();
+      if (unlistenQuit) unlistenQuit();
     };
-  }, [checkIdle, checkIntervalMs]);
+  }, [stopTimerForEvent]);
 
-  // Fast tray update interval (10s) when timer is running
-  useEffect(() => {
-    // Clear any existing fast interval
-    if (trayIntervalRef.current) {
-      clearInterval(trayIntervalRef.current);
-      trayIntervalRef.current = null;
-    }
-
-    // Only start fast interval if timer is running
-    if (status.runningTaskName && status.runningTaskStartMs) {
-      const taskName = status.runningTaskName;
-      const startMs = status.runningTaskStartMs;
-
-      // Update immediately
-      emitWidgetUpdate(taskName, startMs);
-
-      // Update every 10 seconds
-      trayIntervalRef.current = window.setInterval(() => {
-        updateTrayDisplay(taskName, startMs);
-        emitWidgetUpdate(taskName, startMs);
-      }, 10_000);
-    } else {
-      // No timer running - update widget immediately
-      emitWidgetUpdate(null, null);
-    }
-
-    return () => {
-      if (trayIntervalRef.current) {
-        clearInterval(trayIntervalRef.current);
-        trayIntervalRef.current = null;
-      }
-    };
-  }, [status.runningTaskName, status.runningTaskStartMs]);
-
-  return { ...status, refresh: checkIdle };
-}
-
-/**
- * Hook to manually get the current idle time.
- *
- * @returns Current idle time in seconds
- */
-export function useIdleTime(): {
-  idleSeconds: number;
-  refresh: () => Promise<void>;
-} {
-  const [idleSeconds, setIdleSeconds] = useState(0);
-
-  const refresh = useCallback(async () => {
-    try {
-      const seconds = await invoke<number>("get_idle_time");
-      setIdleSeconds(seconds);
-    } catch (error) {
-      console.error("Failed to get idle time:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, 1000);
-    return () => clearInterval(interval);
-  }, [refresh]);
-
-  return { idleSeconds, refresh };
+  return {
+    ...status,
+    refresh: pollRuntime,
+  };
 }

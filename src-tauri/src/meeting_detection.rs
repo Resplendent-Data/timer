@@ -6,6 +6,10 @@
 
 #[cfg(target_os = "macos")]
 use std::process::Command;
+#[cfg(target_os = "macos")]
+use std::sync::{Mutex, OnceLock};
+#[cfg(target_os = "macos")]
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -160,6 +164,77 @@ struct WindowTitleFetch {
     diagnostic: Option<String>,
 }
 
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone)]
+struct CachedWindowTitleFetch {
+    app_name: Option<String>,
+    bundle_id: Option<String>,
+    title: Option<String>,
+    diagnostic: Option<String>,
+    checked_at: Instant,
+}
+
+#[cfg(target_os = "macos")]
+fn window_title_cache() -> &'static Mutex<Option<CachedWindowTitleFetch>> {
+    static WINDOW_TITLE_CACHE: OnceLock<Mutex<Option<CachedWindowTitleFetch>>> = OnceLock::new();
+    WINDOW_TITLE_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "macos")]
+fn should_fetch_window_title(app_name: Option<&str>, bundle_id: Option<&str>) -> bool {
+    let app_lower = app_name.unwrap_or_default().to_lowercase();
+    let bundle_lower = bundle_id.unwrap_or_default().to_lowercase();
+
+    is_browser_context(&app_lower, &bundle_lower)
+        || is_teams_context(&app_lower, &bundle_lower)
+        || app_lower.contains("slack")
+        || bundle_lower.contains("com.tinyspeck.slackmacgap")
+        || bundle_lower.contains("com.slack")
+}
+
+#[cfg(target_os = "macos")]
+fn cached_window_title_fetch(
+    app_name: Option<&str>,
+    bundle_id: Option<&str>,
+) -> Option<WindowTitleFetch> {
+    const WINDOW_TITLE_CACHE_TTL: Duration = Duration::from_secs(60);
+
+    let Ok(cache) = window_title_cache().lock() else {
+        return None;
+    };
+    let cached = cache.as_ref()?;
+
+    if cached.app_name.as_deref() != app_name || cached.bundle_id.as_deref() != bundle_id {
+        return None;
+    }
+
+    if cached.checked_at.elapsed() > WINDOW_TITLE_CACHE_TTL {
+        return None;
+    }
+
+    Some(WindowTitleFetch {
+        title: cached.title.clone(),
+        diagnostic: cached.diagnostic.clone(),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn store_cached_window_title_fetch(
+    app_name: Option<&str>,
+    bundle_id: Option<&str>,
+    fetch: &WindowTitleFetch,
+) {
+    if let Ok(mut cache) = window_title_cache().lock() {
+        *cache = Some(CachedWindowTitleFetch {
+            app_name: app_name.map(str::to_string),
+            bundle_id: bundle_id.map(str::to_string),
+            title: fetch.title.clone(),
+            diagnostic: fetch.diagnostic.clone(),
+            checked_at: Instant::now(),
+        });
+    }
+}
+
 fn meeting_diagnostic(
     app_name: Option<&str>,
     bundle_id: Option<&str>,
@@ -270,10 +345,18 @@ pub fn get_meeting_presence() -> Result<MeetingPresence, String> {
         .bundleIdentifier()
         .map(|bundle| bundle.to_string());
 
-    let title_fetch = app_name
-        .as_deref()
-        .map(|name| fetch_window_title(name, bundle_id.as_deref()))
-        .unwrap_or_default();
+    let title_fetch = if should_fetch_window_title(app_name.as_deref(), bundle_id.as_deref()) {
+        cached_window_title_fetch(app_name.as_deref(), bundle_id.as_deref()).unwrap_or_else(|| {
+            let fetch = app_name
+                .as_deref()
+                .map(|name| fetch_window_title(name, bundle_id.as_deref()))
+                .unwrap_or_default();
+            store_cached_window_title_fetch(app_name.as_deref(), bundle_id.as_deref(), &fetch);
+            fetch
+        })
+    } else {
+        WindowTitleFetch::default()
+    };
     let window_title = title_fetch.title;
 
     let reason = meeting_reason(

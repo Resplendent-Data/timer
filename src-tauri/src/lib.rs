@@ -13,10 +13,12 @@ mod stats;
 use std::sync::Mutex;
 
 use clickup::{
-    IdleCheckResult, RunningTimerInfo, TaskSearchResult, TeamLeaderboardResponse, TimeEntryTag,
+    IdleCheckResult, RunningTimerInfo, RuntimeSnapshot, TaskSearchResult,
+    TeamLeaderboardResponse, TimeEntryTag,
 };
 use meeting_detection::MeetingPresence;
-use stats::ProductivityStats;
+use serde::Serialize;
+use stats::{ProductivityStats, WorkProgressStats};
 use tauri::{
     include_image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -28,6 +30,12 @@ use tauri::{
 /// State to hold reference to the timer display menu item for dynamic updates.
 struct TrayMenuState {
     timer_display: Mutex<MenuItem<tauri::Wry>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AppVisibilityChange {
+    visible: bool,
+    focused: bool,
 }
 
 /// Tauri command to search for tasks.
@@ -162,6 +170,16 @@ async fn get_running_timer_info(
     team_id: String,
 ) -> Result<Option<RunningTimerInfo>, String> {
     clickup::get_running_timer_info(api_key, team_id).await
+}
+
+/// Tauri command to fetch a single runtime snapshot for the background scheduler.
+#[tauri::command]
+async fn poll_runtime(
+    api_key: String,
+    team_id: String,
+    idle_threshold_secs: Option<u64>,
+) -> Result<RuntimeSnapshot, String> {
+    clickup::poll_runtime_impl(api_key, team_id, idle_threshold_secs.unwrap_or(600)).await
 }
 
 /// Tauri command to ensure the "rt" tag exists in the workspace.
@@ -370,6 +388,12 @@ async fn get_productivity_stats(
         .map_err(|e| e.to_string())
 }
 
+/// Get lightweight work-progress totals for the timer tab.
+#[tauri::command]
+async fn get_work_progress_summary() -> Result<WorkProgressStats, String> {
+    stats::get_work_progress_summary().map_err(|e| e.to_string())
+}
+
 /// Get ClickUp team leaderboard data for the stats screen.
 #[tauri::command]
 async fn get_clickup_team_leaderboard(
@@ -391,8 +415,8 @@ async fn get_github_pr_counts(
 /// Record a heartbeat from the frontend (called every 30 seconds).
 /// Tracks whether the user is currently active or idle.
 #[tauri::command]
-fn record_heartbeat(is_idle: bool) {
-    stats::record_heartbeat(is_idle);
+fn record_heartbeat(is_idle: bool, duration_secs: i64) {
+    stats::record_heartbeat(is_idle, duration_secs);
 }
 
 /// Record a ClickUp timer session when stopped.
@@ -480,14 +504,31 @@ async fn close_widget_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Show the main window and bring it to focus.
-#[tauri::command]
-async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+fn emit_app_visibility(
+    app: &tauri::AppHandle,
+    visible: bool,
+    focused: bool,
+) -> Result<(), String> {
+    app.emit(
+        "app-visibility-changed",
+        AppVisibilityChange { visible, focused },
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn show_and_focus_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        emit_app_visibility(app, true, true)?;
     }
     Ok(())
+}
+
+/// Show the main window and bring it to focus.
+#[tauri::command]
+async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    show_and_focus_main_window(&app)
 }
 
 /// Save the widget position (called from frontend when widget is moved).
@@ -588,16 +629,10 @@ pub fn run() {
                         });
                     }
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        let _ = show_and_focus_main_window(app);
                     }
                     "start_timer" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        let _ = show_and_focus_main_window(app);
                         let _ = app.emit("menu-start-timer", ());
                     }
                     "stop_timer" => {
@@ -619,6 +654,7 @@ pub fn run() {
                             api.prevent_close();
                             // Hide the window instead
                             let _ = window_clone.hide();
+                            let _ = emit_app_visibility(&app_handle, false, false);
                         }
                         tauri::WindowEvent::Focused(focused) => {
                             // Show/hide widget based on main window focus
@@ -629,6 +665,8 @@ pub fn run() {
                                     let _ = widget.show();
                                 }
                             }
+                            let visible = window_clone.is_visible().unwrap_or(!*focused);
+                            let _ = emit_app_visibility(&app_handle, visible, *focused);
                         }
                         _ => {}
                     }
@@ -642,6 +680,7 @@ pub fn run() {
             get_idle_time,
             get_running_timer,
             get_running_timer_info,
+            poll_runtime,
             debug_clickup_api,
             search_tasks,
             start_timer,
@@ -651,6 +690,7 @@ pub fn run() {
             update_tray_timer_display,
             send_notification_linux,
             get_productivity_stats,
+            get_work_progress_summary,
             get_clickup_team_leaderboard,
             get_github_pr_counts,
             record_heartbeat,

@@ -5,6 +5,7 @@
  * encrypted JSON file managed by Tauri.
  */
 
+import { emit } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { DEFAULT_WORK_DAYS, normalizeWorkdays } from "./workSchedule";
 
@@ -12,6 +13,7 @@ import { DEFAULT_WORK_DAYS, normalizeWorkdays } from "./workSchedule";
 const store = new LazyStore("settings.json");
 export { DEFAULT_WORK_DAYS };
 export const DEFAULT_EXPECTED_HOURS_PER_DAY = 8;
+export const SETTINGS_UPDATED_EVENT = "settings-updated";
 
 /**
  * Widget position for the always-on-top timer widget.
@@ -147,6 +149,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("githubToken", settings.githubToken ?? "");
   await store.set("githubUsername", settings.githubUsername ?? "");
   await store.save();
+  await emit(SETTINGS_UPDATED_EVENT);
 }
 
 /**
@@ -165,6 +168,7 @@ export async function isConfigured(): Promise<boolean> {
 export async function clearSettings(): Promise<void> {
   await store.clear();
   await store.save();
+  await emit(SETTINGS_UPDATED_EVENT);
 }
 
 /**

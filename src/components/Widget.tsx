@@ -47,6 +47,7 @@ export function Widget() {
   // Track dragging state to distinguish from clicks
   const isDraggingRef = useRef(false);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const savePositionTimeoutRef = useRef<number | null>(null);
 
   // Handle click to open main window - only if we didn't drag
   const handleClick = useCallback(async () => {
@@ -144,24 +145,32 @@ export function Widget() {
 
     const setup = async () => {
       const currentWindow = getCurrentWindow();
-      unlistenMoved = await currentWindow.onMoved(async ({ payload }) => {
+      unlistenMoved = await currentWindow.onMoved(({ payload }) => {
         // Mark as dragging since we moved
         isDraggingRef.current = true;
-        
-        try {
-          await invoke("save_widget_position", {
+
+        if (savePositionTimeoutRef.current) {
+          window.clearTimeout(savePositionTimeoutRef.current);
+        }
+
+        savePositionTimeoutRef.current = window.setTimeout(() => {
+          invoke("save_widget_position", {
             x: payload.x,
             y: payload.y,
+          }).catch((error) => {
+            console.error("Failed to save widget position:", error);
           });
-        } catch (error) {
-          console.error("Failed to save widget position:", error);
-        }
+        }, 200);
       });
     };
 
     setup();
 
     return () => {
+      if (savePositionTimeoutRef.current) {
+        window.clearTimeout(savePositionTimeoutRef.current);
+        savePositionTimeoutRef.current = null;
+      }
       if (unlistenMoved) unlistenMoved();
     };
   }, []);

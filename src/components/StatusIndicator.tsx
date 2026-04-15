@@ -5,14 +5,15 @@
  * Shows elapsed time prominently when running, with compact status indicators.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { IdleStatus, useIdleTime } from "../hooks/useIdleChecker";
+import { Check, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Check } from "lucide-react";
+import { IdleStatus } from "../hooks/useIdleChecker";
 
 interface StatusIndicatorProps {
   status: IdleStatus;
+  nowMs: number;
 }
 
 /**
@@ -35,9 +36,8 @@ function formatDuration(seconds: number): string {
 /**
  * Format milliseconds into a timer display string (HH:MM:SS or MM:SS).
  */
-function formatTimerDisplay(startTimeMs: number): string {
-  const now = Date.now();
-  const elapsedMs = now - startTimeMs;
+function formatTimerDisplay(startTimeMs: number, nowMs: number): string {
+  const elapsedMs = nowMs - startTimeMs;
   const totalSeconds = Math.floor(elapsedMs / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -52,9 +52,8 @@ function formatTimerDisplay(startTimeMs: number): string {
 /**
  * Format a date into a relative time string.
  */
-function formatRelativeTime(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
+function formatRelativeTime(date: Date, nowMs: number): string {
+  const diffMs = nowMs - date.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
   const diffMins = Math.floor(diffSecs / 60);
   const diffHours = Math.floor(diffMins / 60);
@@ -86,37 +85,17 @@ function generateBranchName(taskName: string, taskId: string): string {
   return `${sanitized}-CU-${taskId}`;
 }
 
-/**
- * Hook to get live elapsed time from a start timestamp.
- */
-function useTimerDisplay(startTimeMs: number | null): string {
-  const [display, setDisplay] = useState<string>("--:--");
-
-  useEffect(() => {
-    if (startTimeMs === null || startTimeMs === 0) {
-      setDisplay("--:--");
-      return;
-    }
-
-    // Update immediately
-    setDisplay(formatTimerDisplay(startTimeMs));
-
-    // Update every second
-    const interval = setInterval(() => {
-      setDisplay(formatTimerDisplay(startTimeMs));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [startTimeMs]);
-
-  return display;
-}
-
-export function StatusIndicator({ status }: StatusIndicatorProps) {
-  // Get real-time idle updates
-  const { idleSeconds } = useIdleTime();
-  // Get live elapsed time for running timer
-  const timerDisplay = useTimerDisplay(status.runningTaskStartMs);
+export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
+  const sampledIdleSeconds = status.currentIdleSeconds;
+  const liveIdleSeconds =
+    status.lastIdleSampledAtMs === null
+      ? sampledIdleSeconds
+      : sampledIdleSeconds +
+        Math.max(0, Math.floor((nowMs - status.lastIdleSampledAtMs) / 1000));
+  const timerDisplay =
+    status.runningTaskStartMs && status.runningTaskStartMs > 0
+      ? formatTimerDisplay(status.runningTaskStartMs, nowMs)
+      : "--:--";
   // Track copy feedback state
   const [copied, setCopied] = useState(false);
 
@@ -226,7 +205,7 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
             <div className="flex items-center gap-1.5">
               <span className="brutalist-label">Idle</span>
               <span className="font-mono-display font-semibold tabular-nums">
-                {formatDuration(idleSeconds)}
+                {formatDuration(liveIdleSeconds)}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -250,7 +229,7 @@ export function StatusIndicator({ status }: StatusIndicatorProps) {
             Last: "{status.lastStoppedTaskName}"
           </span>
           <span className="shrink-0 ml-2">
-            {formatRelativeTime(status.lastStoppedAt)}
+            {formatRelativeTime(status.lastStoppedAt, nowMs)}
           </span>
         </div>
       )}

@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Progress } from "@/components/ui/progress";
-import { normalizeWorkdays, parseTimeToMinutes } from "@/lib/workSchedule";
 import {
+  AppSettings,
   DEFAULT_EXPECTED_HOURS_PER_DAY,
   DEFAULT_WORK_DAYS,
-  getSettings,
 } from "../lib/store";
 import { IdleStatus } from "../hooks/useIdleChecker";
 
 interface WorkProgressProps {
   status: IdleStatus;
+  settings: AppSettings | null;
+  isVisible: boolean;
+  nowMs: number;
 }
 
-interface ProductivityProgressStats {
+interface WorkProgressSummary {
   session_seconds_today: number;
   session_seconds_week: number;
 }
@@ -53,42 +55,23 @@ function formatSecondsAsHours(seconds: number): string {
   return formatHours(seconds / 3600);
 }
 
-export function WorkProgress({ status }: WorkProgressProps) {
-  const [stats, setStats] = useState<ProductivityProgressStats | null>(null);
+export function WorkProgress({
+  status,
+  settings,
+  isVisible,
+  nowMs,
+}: WorkProgressProps) {
+  const [stats, setStats] = useState<WorkProgressSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [targetHoursPerDay, setTargetHoursPerDay] = useState(
-    DEFAULT_EXPECTED_HOURS_PER_DAY
-  );
-  const [workdayCount, setWorkdayCount] = useState(DEFAULT_WORK_DAYS.length);
-  const [clockMs, setClockMs] = useState(() => Date.now());
+  const targetHoursPerDay =
+    settings?.expectedHoursPerDay ?? DEFAULT_EXPECTED_HOURS_PER_DAY;
+  const workdayCount = settings?.workdays?.length ?? DEFAULT_WORK_DAYS.length;
 
   const loadProgress = useCallback(async () => {
     try {
       setLoading(true);
-      const settings = await getSettings();
-
-      if (!settings) {
-        setStats({ session_seconds_today: 0, session_seconds_week: 0 });
-        setTargetHoursPerDay(DEFAULT_EXPECTED_HOURS_PER_DAY);
-        setWorkdayCount(DEFAULT_WORK_DAYS.length);
-        return;
-      }
-
-      const workDays = normalizeWorkdays(settings.workdays);
-      const workStartMinutes = parseTimeToMinutes(settings.workdayStart, 8 * 60);
-      const workEndMinutes = parseTimeToMinutes(settings.workdayEnd, 17 * 60);
-      const nextStats = await invoke<ProductivityProgressStats>(
-        "get_productivity_stats",
-        {
-          workStartMinutes,
-          workEndMinutes,
-          workDays,
-        }
-      );
-
+      const nextStats = await invoke<WorkProgressSummary>("get_work_progress_summary");
       setStats(nextStats);
-      setTargetHoursPerDay(settings.expectedHoursPerDay);
-      setWorkdayCount(workDays.length);
     } catch (error) {
       console.error("[WorkProgress] Failed to load progress:", error);
     } finally {
@@ -97,21 +80,15 @@ export function WorkProgress({ status }: WorkProgressProps) {
   }, []);
 
   useEffect(() => {
+    if (!isVisible) {
+      return;
+    }
+
     loadProgress();
     const interval = window.setInterval(loadProgress, 60_000);
     return () => window.clearInterval(interval);
-  }, [loadProgress]);
+  }, [isVisible, loadProgress]);
 
-  useEffect(() => {
-    if (!status.runningTaskStartMs) return;
-
-    setClockMs(Date.now());
-    const interval = window.setInterval(() => setClockMs(Date.now()), 1000);
-
-    return () => window.clearInterval(interval);
-  }, [status.runningTaskStartMs]);
-
-  const nowMs = status.runningTaskStartMs ? clockMs : Date.now();
   const runningTodaySeconds = status.runningTaskStartMs
     ? runningSecondsInRange(
         status.runningTaskStartMs,

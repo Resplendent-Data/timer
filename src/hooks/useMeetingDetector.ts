@@ -6,11 +6,11 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getSettings } from "../lib/store";
+import { AppSettings } from "../lib/store";
 import { sendNotification } from "../lib/notification";
 import { IdleStatus } from "./useIdleChecker";
 
-const POLL_INTERVAL_MS = 20_000;
+const POLL_INTERVAL_MS = 60_000;
 const STABLE_POLLS_REQUIRED = 2;
 const MEETING_TAG_NAME = "meeting";
 
@@ -74,9 +74,14 @@ function captureResumeSnapshot(status: IdleStatus): MeetingResumeSnapshot | null
 /**
  * Start polling meeting presence and drive meeting-mode notifications.
  */
-export function useMeetingDetector(status: IdleStatus): void {
+export function useMeetingDetector(
+  status: IdleStatus,
+  settings: AppSettings | null,
+  isWindowVisible: boolean
+): void {
   const intervalRef = useRef<number | null>(null);
   const latestStatusRef = useRef<IdleStatus>(status);
+  const latestSettingsRef = useRef<AppSettings | null>(settings);
   const consecutiveMeetingRef = useRef(0);
   const consecutiveNotMeetingRef = useRef(0);
   const sessionActiveRef = useRef(false);
@@ -92,6 +97,10 @@ export function useMeetingDetector(status: IdleStatus): void {
     latestStatusRef.current = status;
   }, [status]);
 
+  useEffect(() => {
+    latestSettingsRef.current = settings;
+  }, [settings]);
+
   const resetState = useCallback(() => {
     consecutiveMeetingRef.current = 0;
     consecutiveNotMeetingRef.current = 0;
@@ -103,11 +112,12 @@ export function useMeetingDetector(status: IdleStatus): void {
 
   const pollMeetingState = useCallback(async () => {
     try {
-      const settings = await getSettings();
+      const currentSettings = latestSettingsRef.current;
       if (
-        !settings?.meetingDetectionEnabled ||
-        !settings.clickupApiKey ||
-        !settings.clickupTeamId
+        !isWindowVisible ||
+        !currentSettings?.meetingDetectionEnabled ||
+        !currentSettings.clickupApiKey ||
+        !currentSettings.clickupTeamId
       ) {
         resetState();
         return;
@@ -157,8 +167,8 @@ export function useMeetingDetector(status: IdleStatus): void {
 
               // Best effort: ensure "meeting" tag exists before modal start flow.
               await invoke("ensure_meeting_tag", {
-                apiKey: settings.clickupApiKey,
-                teamId: settings.clickupTeamId,
+                apiKey: currentSettings.clickupApiKey,
+                teamId: currentSettings.clickupTeamId,
               }).catch((error) => {
                 console.debug("[useMeetingDetector] Failed to ensure meeting tag:", error);
               });
@@ -205,9 +215,17 @@ export function useMeetingDetector(status: IdleStatus): void {
     } catch (error) {
       console.debug("[useMeetingDetector] Poll failed:", error);
     }
-  }, [resetState]);
+  }, [isWindowVisible, resetState]);
 
   useEffect(() => {
+    if (!isWindowVisible) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
     pollMeetingState();
     intervalRef.current = window.setInterval(pollMeetingState, POLL_INTERVAL_MS);
 
@@ -217,5 +235,5 @@ export function useMeetingDetector(status: IdleStatus): void {
         intervalRef.current = null;
       }
     };
-  }, [pollMeetingState]);
+  }, [isWindowVisible, pollMeetingState]);
 }

@@ -5,39 +5,51 @@
  * for configuring ClickUp integration.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { onAction } from "@tauri-apps/plugin-notification";
-import { checkNotificationPermission } from "./lib/notification";
-import { useIdleChecker } from "./hooks/useIdleChecker";
-import { useActivityHeartbeat } from "./hooks/useActivityHeartbeat";
-import { useMeetingDetector } from "./hooks/useMeetingDetector";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { GitHubPrStatus } from "./components/GitHubPrStatus";
 import { Settings } from "./components/Settings";
-import { useUpdater } from "./hooks/useUpdater";
+import { Stats } from "./components/Stats";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { TimerControls } from "./components/TimerControls";
 import { WorkProgress } from "./components/WorkProgress";
-import { Stats } from "./components/Stats";
-import { GitHubPrStatus } from "./components/GitHubPrStatus";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getSettings, getWidgetPosition, saveWidgetPosition, clearWidgetPosition } from "./lib/store";
+import { useIdleChecker } from "./hooks/useIdleChecker";
+import { useMeetingDetector } from "./hooks/useMeetingDetector";
+import { useUpdater } from "./hooks/useUpdater";
+import { checkNotificationPermission } from "./lib/notification";
+import {
+  AppSettings,
+  SETTINGS_UPDATED_EVENT,
+  getSettings,
+  getWidgetPosition,
+  saveWidgetPosition,
+  clearWidgetPosition,
+} from "./lib/store";
+
+interface AppVisibilityChange {
+  visible: boolean;
+  focused: boolean;
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState("status");
-  const [widgetEnabled, setWidgetEnabled] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [isWindowVisible, setIsWindowVisible] = useState(true);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const widgetEnabledRef = useRef(false);
 
-  // Start the background idle checker (runs every minute)
-  const idleStatus = useIdleChecker(60_000);
+  const shouldTickClock =
+    isWindowVisible && (activeTab === "status" || activeTab === "stats");
 
-  // Start the activity heartbeat (runs every 30 seconds for stats tracking)
-  useActivityHeartbeat();
-
-  // Start meeting detection prompt flow (runs every 20 seconds when enabled)
-  useMeetingDetector(idleStatus);
-
-  // Auto-updater — runs on app start and checks hourly
-  const updater = useUpdater();
+  const idleStatus = useIdleChecker(settings, isWindowVisible);
+  useMeetingDetector(idleStatus, settings, isWindowVisible);
+  const updater = useUpdater({
+    isWindowVisible,
+    eagerCheck: isWindowVisible || activeTab === "settings",
+  });
 
   // Create or close the widget window based on settings
   const updateWidgetState = useCallback(async (enabled: boolean) => {
@@ -65,6 +77,21 @@ function App() {
       console.error("Failed to update widget state:", error);
     }
   }, []);
+
+  const loadSettingsSnapshot = useCallback(async () => {
+    try {
+      const nextSettings = await getSettings();
+      setSettings(nextSettings);
+
+      const nextWidgetEnabled = nextSettings?.widgetEnabled ?? false;
+      if (widgetEnabledRef.current !== nextWidgetEnabled) {
+        widgetEnabledRef.current = nextWidgetEnabled;
+        void updateWidgetState(nextWidgetEnabled);
+      }
+    } catch (error) {
+      console.error("Failed to load settings snapshot:", error);
+    }
+  }, [updateWidgetState]);
 
   // Request notification permission on app startup (no-op on Linux)
   useEffect(() => {
@@ -118,42 +145,27 @@ function App() {
 
   // Ensure the "rt" tag exists in ClickUp workspace on app startup
   useEffect(() => {
-    const ensureRtTag = async () => {
-      try {
-        const settings = await getSettings();
-        if (settings?.clickupApiKey && settings?.clickupTeamId) {
-          const created = await invoke<boolean>("ensure_rt_tag", {
-            apiKey: settings.clickupApiKey,
-            teamId: settings.clickupTeamId,
-          });
-          if (created) {
-            console.log("[App] Created 'rt' tag in ClickUp workspace");
-          }
+    if (!settings?.clickupApiKey || !settings?.clickupTeamId) {
+      return;
+    }
+
+    invoke<boolean>("ensure_rt_tag", {
+      apiKey: settings.clickupApiKey,
+      teamId: settings.clickupTeamId,
+    })
+      .then((created) => {
+        if (created) {
+          console.log("[App] Created 'rt' tag in ClickUp workspace");
         }
-      } catch (error) {
+      })
+      .catch((error) => {
         console.error("Failed to ensure rt tag exists:", error);
-      }
-    };
+      });
+  }, [settings]);
 
-    ensureRtTag();
-  }, []);
-
-  // Load widget setting on startup and create widget if enabled
   useEffect(() => {
-    const loadWidgetSetting = async () => {
-      try {
-        const settings = await getSettings();
-        if (settings?.widgetEnabled) {
-          setWidgetEnabled(true);
-          await updateWidgetState(true);
-        }
-      } catch (error) {
-        console.error("Failed to load widget setting:", error);
-      }
-    };
-
-    loadWidgetSetting();
-  }, [updateWidgetState]);
+    void loadSettingsSnapshot();
+  }, [loadSettingsSnapshot]);
 
   // Listen for widget position save events from Rust
   useEffect(() => {
@@ -173,25 +185,40 @@ function App() {
     };
   }, []);
 
-  // Watch for settings changes to update widget
   useEffect(() => {
-    const checkWidgetSetting = async () => {
-      try {
-        const settings = await getSettings();
-        const newEnabled = settings?.widgetEnabled ?? false;
-        if (newEnabled !== widgetEnabled) {
-          setWidgetEnabled(newEnabled);
-          await updateWidgetState(newEnabled);
+    let unlistenSettings: (() => void) | null = null;
+    let unlistenVisibility: (() => void) | null = null;
+
+    const setup = async () => {
+      unlistenSettings = await listen(SETTINGS_UPDATED_EVENT, () => {
+        void loadSettingsSnapshot();
+      });
+
+      unlistenVisibility = await listen<AppVisibilityChange>(
+        "app-visibility-changed",
+        (event) => {
+          setIsWindowVisible(event.payload.visible);
         }
-      } catch (error) {
-        console.error("Failed to check widget setting:", error);
-      }
+      );
     };
 
-    // Check periodically (every 2 seconds) for settings changes
-    const interval = setInterval(checkWidgetSetting, 2000);
-    return () => clearInterval(interval);
-  }, [widgetEnabled, updateWidgetState]);
+    void setup();
+
+    return () => {
+      if (unlistenSettings) unlistenSettings();
+      if (unlistenVisibility) unlistenVisibility();
+    };
+  }, [loadSettingsSnapshot]);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    if (!shouldTickClock) {
+      return;
+    }
+
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [shouldTickClock]);
 
   // Handle tray menu events
   useEffect(() => {
@@ -206,7 +233,6 @@ function App() {
 
       unlistenStop = await listen("menu-stop-timer", async () => {
         try {
-          const settings = await getSettings();
           if (settings) {
             await invoke("stop_timer", {
               apiKey: settings.clickupApiKey,
@@ -226,7 +252,7 @@ function App() {
       if (unlistenStart) unlistenStart();
       if (unlistenStop) unlistenStop();
     };
-  }, [idleStatus]);
+  }, [idleStatus, settings]);
 
   return (
     <main className="h-screen w-full flex flex-col bg-background text-foreground">
@@ -253,14 +279,24 @@ function App() {
             </TabsList>
 
             <TabsContent value="status" className="space-y-4 mt-0 flex-1">
-              <GitHubPrStatus />
-              <StatusIndicator status={idleStatus} />
-              <WorkProgress status={idleStatus} />
+              <GitHubPrStatus settings={settings} isVisible={isWindowVisible} />
+              <StatusIndicator status={idleStatus} nowMs={nowMs} />
+              <WorkProgress
+                status={idleStatus}
+                settings={settings}
+                isVisible={isWindowVisible}
+                nowMs={nowMs}
+              />
               <TimerControls status={idleStatus} />
             </TabsContent>
 
             <TabsContent value="stats" className="mt-0 flex-1">
-              <Stats status={idleStatus} />
+              <Stats
+                status={idleStatus}
+                settings={settings}
+                isVisible={isWindowVisible}
+                nowMs={nowMs}
+              />
             </TabsContent>
 
             <TabsContent value="settings" className="mt-0 flex-1">

@@ -7,9 +7,7 @@ use chrono::{Datelike, NaiveDate};
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-
-/// Heartbeat interval in seconds (must match frontend)
-const HEARTBEAT_INTERVAL_SECS: i64 = 30;
+use std::sync::OnceLock;
 
 /// Database retention period in days
 const DB_RETENTION_DAYS: i64 = 90;
@@ -75,6 +73,13 @@ pub struct ProductivityStats {
     pub recent_events: Vec<IdleEvent>,
 }
 
+/// Lightweight work-progress totals for the timer tab.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkProgressStats {
+    pub session_seconds_today: i64,
+    pub session_seconds_week: i64,
+}
+
 fn sanitize_session_duration_secs(duration_secs: i64) -> Option<i64> {
     if duration_secs <= 0 {
         return None;
@@ -99,11 +104,12 @@ fn get_db_path() -> PathBuf {
     path
 }
 
-fn get_connection() -> Result<Connection> {
+fn open_connection() -> Result<Connection> {
     let path = get_db_path();
-    let conn = Connection::open(path)?;
+    Connection::open(path)
+}
 
-    // New activity_days table (replaces daily_stats)
+fn initialize_schema(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS activity_days (
             date TEXT PRIMARY KEY,
@@ -134,7 +140,8 @@ fn get_connection() -> Result<Connection> {
         "CREATE TABLE IF NOT EXISTS activity_heartbeats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             recorded_at INTEGER NOT NULL,
-            is_idle BOOLEAN NOT NULL
+            is_idle BOOLEAN NOT NULL,
+            duration_secs INTEGER NOT NULL DEFAULT 30
         )",
         (),
     )?;
@@ -142,6 +149,10 @@ fn get_connection() -> Result<Connection> {
     // Migration: Add session_duration_secs column if it doesn't exist (for existing databases)
     let _ = conn.execute(
         "ALTER TABLE idle_events ADD COLUMN session_duration_secs INTEGER DEFAULT 0",
+        (),
+    );
+    let _ = conn.execute(
+        "ALTER TABLE activity_heartbeats ADD COLUMN duration_secs INTEGER NOT NULL DEFAULT 30",
         (),
     );
 
@@ -154,18 +165,36 @@ fn get_connection() -> Result<Connection> {
         (),
     )?;
 
-    Ok(conn)
+    Ok(())
+}
+
+fn ensure_schema_initialized() -> Result<()> {
+    static SCHEMA_READY: OnceLock<()> = OnceLock::new();
+    if SCHEMA_READY.get().is_some() {
+        return Ok(());
+    }
+
+    let conn = open_connection()?;
+    initialize_schema(&conn)?;
+    let _ = SCHEMA_READY.get_or_init(|| ());
+    Ok(())
+}
+
+fn get_connection() -> Result<Connection> {
+    ensure_schema_initialized()?;
+    open_connection()
 }
 
 /// Initialize the database (called at app startup).
 /// Drops old tables to reset stats with new schema.
 pub fn init_database() {
-    if let Ok(conn) = get_connection() {
+    if let Ok(conn) = open_connection() {
         // Drop old tables if they exist (full reset)
         let _ = conn.execute("DROP TABLE IF EXISTS daily_stats", ());
 
-        // Ensure new schema is created
-        let _ = get_connection();
+        // Ensure new schema is created once up front instead of on every write.
+        let _ = initialize_schema(&conn);
+        let _ = ensure_schema_initialized();
 
         // Clean up old data
         cleanup_old_data(&conn);
@@ -191,8 +220,12 @@ fn cleanup_old_data(conn: &Connection) {
 }
 
 /// Record a heartbeat from the frontend.
-/// Called every 30 seconds with the current idle status.
-pub fn record_heartbeat(is_idle: bool) {
+/// Called on each runtime scheduler tick with the current idle status and tick duration.
+pub fn record_heartbeat(is_idle: bool, duration_secs: i64) {
+    if duration_secs <= 0 {
+        return;
+    }
+
     if let Ok(conn) = get_connection() {
         let now_ts = chrono::Local::now().timestamp();
         let today = chrono::Local::now().date_naive().to_string();
@@ -205,20 +238,20 @@ pub fn record_heartbeat(is_idle: bool) {
 
         // Keep heartbeat timestamps so stats can filter by work hours.
         let _ = conn.execute(
-            "INSERT INTO activity_heartbeats (recorded_at, is_idle) VALUES (?, ?)",
-            (now_ts, is_idle),
+            "INSERT INTO activity_heartbeats (recorded_at, is_idle, duration_secs) VALUES (?, ?, ?)",
+            (now_ts, is_idle, duration_secs),
         );
 
-        // Add heartbeat interval to appropriate column
+        // Add the observed tick duration to the appropriate daily bucket.
         if is_idle {
             let _ = conn.execute(
                 "UPDATE activity_days SET idle_seconds = idle_seconds + ? WHERE date = ?",
-                (HEARTBEAT_INTERVAL_SECS, &today),
+                (duration_secs, &today),
             );
         } else {
             let _ = conn.execute(
                 "UPDATE activity_days SET active_seconds = active_seconds + ? WHERE date = ?",
-                (HEARTBEAT_INTERVAL_SECS, &today),
+                (duration_secs, &today),
             );
         }
     }
@@ -359,16 +392,14 @@ fn get_day_activity_for_work_hours(
     let sql = format!(
         "SELECT
             COUNT(*),
-            COALESCE(SUM(CASE WHEN is_idle = 0 AND ({work_hours_condition}) THEN ?1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN is_idle = 1 AND ({work_hours_condition}) THEN ?1 ELSE 0 END), 0)
+            COALESCE(SUM(CASE WHEN is_idle = 0 AND ({work_hours_condition}) THEN duration_secs ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN is_idle = 1 AND ({work_hours_condition}) THEN duration_secs ELSE 0 END), 0)
          FROM activity_heartbeats
-         WHERE date(datetime(recorded_at, 'unixepoch', 'localtime')) = ?2"
+         WHERE date(datetime(recorded_at, 'unixepoch', 'localtime')) = ?1"
     );
 
     let (heartbeat_count, filtered_active, filtered_idle): (i64, i64, i64) =
-        conn.query_row(&sql, params![HEARTBEAT_INTERVAL_SECS, date], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
+        conn.query_row(&sql, params![date], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
 
     if heartbeat_count > 0 {
         return Ok((filtered_active, filtered_idle));
@@ -708,6 +739,30 @@ pub fn get_productivity_stats(
         week_delta_seconds: active_week - active_last_week,
         last_7_days,
         recent_events,
+    })
+}
+
+/// Get lightweight timer-tab work progress totals without the heavier stats aggregation.
+pub fn get_work_progress_summary() -> Result<WorkProgressStats> {
+    let conn = get_connection()?;
+    let today = chrono::Local::now().date_naive();
+    let days_since_monday = today.weekday().num_days_from_monday() as i64;
+    let week_start = today
+        .checked_sub_signed(chrono::Duration::days(days_since_monday))
+        .unwrap_or(today);
+
+    let (session_seconds_today, session_seconds_week): (i64, i64) = conn
+        .query_row(
+            "SELECT
+                COALESCE((SELECT session_seconds FROM activity_days WHERE date = ?1), 0),
+                COALESCE((SELECT SUM(session_seconds) FROM activity_days WHERE date BETWEEN ?2 AND ?1), 0)",
+            params![today.to_string(), week_start.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+
+    Ok(WorkProgressStats {
+        session_seconds_today,
+        session_seconds_week,
     })
 }
 
