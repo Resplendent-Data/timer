@@ -1,17 +1,30 @@
 /**
  * Modal dialog for starting a timer with optional tag and billable settings.
- *
- * Uses a simple overlay approach instead of portals for Tauri compatibility.
  */
 
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getSettings } from "../lib/store";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { getSettings } from "../lib/store";
 
 /** Time entry tag from ClickUp */
 export interface TimeEntryTag {
@@ -43,6 +56,8 @@ interface StartTimerModalProps {
   /** Called when timer is successfully started */
   onTimerStarted: (task: TaskInfo | null, description?: string) => void;
 }
+
+const NO_TAG_VALUE = "__none__";
 
 export function StartTimerModal({
   open,
@@ -153,43 +168,41 @@ export function StartTimerModal({
     }
   };
 
-  const handleClose = () => {
-    if (!isLoading) {
-      onOpenChange(false);
-    }
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (isLoading && !nextOpen) return;
+    onOpenChange(nextOpen);
   };
 
-  if (!open) {
-    return null;
-  }
+  const selectedTagValue = selectedTag || NO_TAG_VALUE;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-background/75 backdrop-blur-sm"
-        onClick={handleClose}
-      />
-      
-      {/* Modal content */}
-      <Card className="relative z-10 mx-4 w-full max-w-md border-border bg-card/95 shadow-xl">
-        <CardHeader>
-          <CardTitle>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
+      <DialogContent
+        className="max-w-md gap-5"
+        onEscapeKeyDown={(event) => {
+          if (isLoading) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (isLoading) event.preventDefault();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>
             {isManualTimer ? "Start Manual Timer" : "Start Timer"}
-          </CardTitle>
+          </DialogTitle>
           {!isManualTimer && task && (
-            <CardDescription>
+            <DialogDescription>
               <span className="font-medium text-foreground">{task.name}</span>
               {task.projectPath && (
                 <span className="block text-xs text-muted-foreground mt-1">
                   {task.projectPath}
                 </span>
               )}
-            </CardDescription>
+            </DialogDescription>
           )}
-        </CardHeader>
+        </DialogHeader>
 
-        <CardContent className="grid gap-4">
+        <div className="grid gap-4">
           {/* Description - only for manual timers */}
           {isManualTimer && (
             <div className="grid gap-2">
@@ -207,22 +220,28 @@ export function StartTimerModal({
           {/* Tag selector */}
           <div className="grid gap-2">
             <Label htmlFor="tag">Tag (optional)</Label>
-            <select
-              id="tag"
-              value={selectedTag}
-              onChange={(e) => setSelectedTag(e.target.value)}
-              className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-input/35 px-3 py-2 text-sm shadow-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
+            <Select
+              value={selectedTagValue}
+              onValueChange={(value) =>
+                setSelectedTag(value === NO_TAG_VALUE ? "" : value)
+              }
+              disabled={isLoadingTags}
             >
-              <option value="">{isLoadingTags ? "Loading tags..." : "None"}</option>
-              {selectedTag && !tags.some((tag) => tag.name === selectedTag) && (
-                <option value={selectedTag}>{selectedTag}</option>
-              )}
-              {tags.map((tag) => (
-                <option key={tag.name} value={tag.name}>
-                  {tag.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="tag">
+                <SelectValue placeholder={isLoadingTags ? "Loading tags..." : "None"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_TAG_VALUE}>None</SelectItem>
+                {selectedTag && !tags.some((tag) => tag.name === selectedTag) && (
+                  <SelectItem value={selectedTag}>{selectedTag}</SelectItem>
+                )}
+                {tags.map((tag) => (
+                  <SelectItem key={tag.name} value={tag.name}>
+                    {tag.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {selectedTag && (() => {
               const selectedTagData = tags.find((t) => t.name === selectedTag);
               const bgColor = selectedTagData?.tag_bg || "#888888";
@@ -258,28 +277,32 @@ export function StartTimerModal({
 
           {/* Error message */}
           {error && (
-            <div className="rounded-lg border border-destructive/60 bg-destructive/10 p-2 text-sm text-destructive">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-        </CardContent>
+        </div>
 
-        <CardFooter className="flex justify-end gap-2">
-          <Button variant="outline" onClick={handleClose} disabled={isLoading}>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => handleDialogOpenChange(false)}
+            disabled={isLoading}
+          >
             Cancel
           </Button>
           <Button onClick={handleStartTimer} disabled={isLoading}>
             {isLoading ? "Starting..." : "Start Timer"}
           </Button>
-        </CardFooter>
+        </DialogFooter>
 
         {/* Hint for quick start */}
         {!isManualTimer && (
-          <p className="text-xs text-muted-foreground text-center pb-4 -mt-2">
+          <p className="text-center text-xs text-muted-foreground">
             Tip: Hold Shift when clicking a task to start immediately
           </p>
         )}
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

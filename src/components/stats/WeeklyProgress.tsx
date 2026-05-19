@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface WeeklyProgressProps {
@@ -68,17 +69,20 @@ export function WeeklyProgress({
           {getInsight()}
         </p>
       </div>
-      <div className={cn(
+      <Badge
+        variant="outline"
+        className={cn(
         "flex items-center gap-1 px-2 py-1 text-xs font-mono-display font-medium",
         isUp && "bg-success-soft text-success",
         isDown && "bg-destructive/20 text-destructive",
         isSteady && "bg-muted text-muted-foreground"
-      )}>
+      )}
+      >
         {isUp && <span>+{formatDelta(weekDeltaSeconds)}</span>}
         {isDown && <span>-{formatDelta(weekDeltaSeconds)}</span>}
         {isSteady && <span>=</span>}
         <span className="text-[10px] opacity-75 uppercase">vs last</span>
-      </div>
+      </Badge>
     </div>
   );
 }

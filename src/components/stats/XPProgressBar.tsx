@@ -1,3 +1,6 @@
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+
 interface XPProgressBarProps {
   currentXp: number;
   level: number;
@@ -17,9 +20,9 @@ export function XPProgressBar({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-8 h-8 bg-primary text-primary-foreground font-mono-display font-bold text-sm">
+          <Badge className="flex h-8 w-8 items-center justify-center rounded-lg p-0 font-mono-display text-sm">
             {level}
-          </div>
+          </Badge>
           <div>
             <p className="text-sm font-medium">Lv.{level}</p>
             <p className="text-xs text-muted-foreground font-mono-display">
@@ -35,13 +38,7 @@ export function XPProgressBar({
         </div>
       </div>
       
-      {/* Progress bar */}
-      <div className="relative h-3 bg-muted brutalist-border">
-        <div
-          className="absolute inset-y-0 left-0 bg-primary transition-all duration-500"
-          style={{ width: `${progressPercent}%` }}
-        />
-      </div>
+      <Progress value={progressPercent} className="h-3" />
       
       <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider">
         1 XP per minute active

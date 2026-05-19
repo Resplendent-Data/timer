@@ -12,8 +12,12 @@ import {
   Trophy,
   Zap,
 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { normalizeWorkdays, parseTimeToMinutes } from "@/lib/workSchedule";
 import { IdleStatus } from "../hooks/useIdleChecker";
@@ -330,27 +334,35 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
 
   if (loading && !stats) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="h-6 w-6 border-2 border-primary border-t-transparent animate-spin mx-auto" />
+      <Card className="py-12">
+        <CardContent className="px-4">
+          <div className="text-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto" />
           <p className="text-xs text-muted-foreground mt-3 uppercase tracking-wider">
             Loading stats...
           </p>
-        </div>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   if (error) {
     return (
-      <div className="brutalist-border p-6">
-        <div className="text-center">
-          <p className="text-sm text-destructive font-mono-display mb-4">{error}</p>
+      <Card className="py-6">
+        <CardContent className="px-4">
+          <div className="text-center">
+          <Alert variant="destructive" className="mb-4 text-left">
+            <AlertDescription className="font-mono-display">
+              {error}
+            </AlertDescription>
+          </Alert>
           <Button variant="outline" size="sm" onClick={loadStats}>
             Retry
           </Button>
-        </div>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -441,11 +453,11 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
 
   return (
     <div className="space-y-4 pb-2">
-      <div className="relative overflow-hidden brutalist-border bg-card p-4">
+      <Card className="relative gap-0 overflow-hidden py-0">
         <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rotate-12 bg-primary/10" />
         <div className="pointer-events-none absolute -bottom-8 -left-8 h-20 w-32 bg-success-faint" />
 
-        <div className="relative">
+        <CardContent className="relative px-4 py-4">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <p className="brutalist-label flex items-center gap-1">
@@ -482,7 +494,7 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
 
           <Progress
             value={Math.max(0, Math.min(stats.xp_progress_percent, 100))}
-            className="h-2 brutalist-border bg-muted"
+            className="h-2"
             indicatorClassName="bg-primary"
           />
           <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -491,7 +503,7 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <div className="brutalist-border bg-background/60 px-2 py-1.5">
+            <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
               <p className="flex items-center gap-1 text-muted-foreground">
                 Quest XP Today
                 <Hint
@@ -502,7 +514,7 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
                 +{earnedQuestXp}
               </p>
             </div>
-            <div className="brutalist-border bg-background/60 px-2 py-1.5">
+            <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
               <p className="text-muted-foreground">Focus Ratio</p>
               <p className="font-mono-display font-semibold">
                 {focusRatioPercent}%
@@ -515,11 +527,12 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
               ? ` • +${earnedQuestXp} quest XP (${questXpSourceText})`
               : " • complete quests below to earn quest XP"}
           </p>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="brutalist-border bg-card/70 p-3">
+        <Card className="gap-0 py-0">
+          <CardContent className="px-3 py-3">
           <p className="brutalist-label flex items-center gap-1">
             <Zap className="h-3 w-3 text-success" />
             Active Today
@@ -531,9 +544,11 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
           <p className="text-xs text-muted-foreground">
             Idle {formatDuration(stats.idle_seconds_today)}
           </p>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="brutalist-border bg-card/70 p-3">
+        <Card className="gap-0 py-0">
+          <CardContent className="px-3 py-3">
           <p className="brutalist-label flex items-center gap-1">
             <Timer className="h-3 w-3 text-primary" />
             Tracked Today
@@ -551,9 +566,11 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
               {status.runningTaskName}
             </p>
           )}
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="brutalist-border bg-card/70 p-3">
+        <Card className="gap-0 py-0">
+          <CardContent className="px-3 py-3">
           <p className="brutalist-label flex items-center gap-1">
             <Target className="h-3 w-3 text-success" />
             Weekly Sessions
@@ -565,9 +582,11 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
           <p className="text-xs text-muted-foreground">
             {formatDuration(stats.session_seconds_week)} tracked
           </p>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="brutalist-border bg-card/70 p-3">
+        <Card className="gap-0 py-0">
+          <CardContent className="px-3 py-3">
           <p className="brutalist-label flex items-center gap-1">
             <Trophy className="h-3 w-3 text-primary" />
             Avg Session
@@ -577,10 +596,12 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
             {formatMinutes(stats.avg_session_minutes)}
           </p>
           <p className="text-xs text-muted-foreground">per completed ClickUp timer</p>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <div className="mb-3 flex items-center justify-between">
           <p className="brutalist-label flex items-center gap-1">
             <Target className="h-3 w-3" />
@@ -629,14 +650,15 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
                 </div>
                 <Progress
                   value={progress}
-                  className="h-1.5 brutalist-border bg-muted"
+                  className="h-1.5"
                   indicatorClassName={done ? "bg-success" : "bg-primary"}
                 />
               </div>
             );
           })}
         </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <TeamLeaderboard
         leaderboard={leaderboard}
@@ -645,14 +667,17 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
         hasClickupConfig={hasClickupConfig}
       />
 
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <div className="mb-3 flex justify-end">
           <Hint text="7-day bars use heartbeat activity (active + idle). Hover a day to see ClickUp tracked time details." />
         </div>
         <FocusChart data={stats.last_7_days} />
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <div className="mb-3 flex items-center justify-between">
           <p className="brutalist-label flex items-center gap-1">
             <TrendIcon className="h-3 w-3" />
@@ -681,9 +706,9 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
                 {formatDuration(stats.active_seconds_week)}
               </span>
             </div>
-            <div className="h-2 brutalist-border bg-muted">
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full bg-primary transition-all"
+                className="h-full rounded-full bg-primary transition-all"
                 style={{ width: `${thisWeekBarPercent}%` }}
               />
             </div>
@@ -696,9 +721,9 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
                 {formatDuration(stats.active_seconds_last_week)}
               </span>
             </div>
-            <div className="h-2 brutalist-border bg-muted">
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full bg-muted-foreground/60 transition-all"
+                className="h-full rounded-full bg-muted-foreground/60 transition-all"
                 style={{ width: `${lastWeekBarPercent}%` }}
               />
             </div>
@@ -712,16 +737,20 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
                 weekChangePercent >= 0 ? "up" : "down"
               } compared to last week.`}
         </p>
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <div className="mb-3 flex justify-end">
           <Hint text="Logs idle-threshold events and whether a running ClickUp timer was auto-stopped." />
         </div>
         <IdleHistory events={stats.recent_events} />
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <details>
           <summary className="flex cursor-pointer items-center justify-between gap-2">
             <p className="brutalist-label flex items-center gap-1">
@@ -735,18 +764,19 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
           <p className="mt-2 text-xs text-muted-foreground">
             One title per level. Current highlight: Lv {cappedCurrentLevel}.
           </p>
-          <div className="mt-3 max-h-72 overflow-y-auto brutalist-border bg-background/40 p-2">
+          <ScrollArea className="mt-3 max-h-72 rounded-lg border border-border bg-background/40 p-2">
             <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
               {LEVEL_LABELS.map((label, index) => {
                 const level = index + 1;
                 const isCurrent = level === cappedCurrentLevel;
 
                 return (
-                  <div
+                  <Badge
                     key={level}
+                    variant={isCurrent ? "default" : "outline"}
                     className={cn(
-                      "flex items-center justify-between gap-2 brutalist-border px-2 py-1.5 text-xs",
-                      isCurrent ? "bg-primary/15 border-primary" : "bg-card/60"
+                      "flex min-h-8 w-full justify-between gap-2 rounded-lg px-2 py-1.5 text-xs normal-case tracking-normal",
+                      !isCurrent && "bg-card/60"
                     )}
                   >
                     <span className="font-mono-display text-[11px] text-muted-foreground">
@@ -755,13 +785,14 @@ export function Stats({ status, settings, isVisible, nowMs }: StatsProps) {
                     <span className={cn("text-right", isCurrent && "font-semibold")}>
                       {label}
                     </span>
-                  </div>
+                  </Badge>
                 );
               })}
             </div>
-          </div>
+          </ScrollArea>
         </details>
-      </div>
+        </CardContent>
+      </Card>
 
       <div className="flex justify-end">
         <Button variant="outline" size="sm" onClick={loadStats}>

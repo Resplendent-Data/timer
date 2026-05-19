@@ -1,3 +1,4 @@
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 interface StatCardProps {
@@ -16,15 +17,15 @@ export function StatCard({
   variant = "default",
 }: StatCardProps) {
   return (
-    <div
+    <Card
       className={cn(
-        "rounded-lg p-4 transition-colors",
+        "gap-0 py-0 transition-colors",
         variant === "default" && "bg-muted/50",
         variant === "highlight" && "bg-primary/10 border border-primary/20",
         variant === "muted" && "bg-muted/30"
       )}
     >
-      <div className="flex items-start justify-between">
+      <CardContent className="flex items-start justify-between px-4 py-4">
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wide">
             {title}
@@ -35,7 +36,7 @@ export function StatCard({
           )}
         </div>
         {icon && <span className="text-2xl">{icon}</span>}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

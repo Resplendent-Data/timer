@@ -9,6 +9,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { onAction } from "@tauri-apps/plugin-notification";
+import { ChartNoAxesColumn, Clock3, SlidersHorizontal } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GitHubPrStatus } from "./components/GitHubPrStatus";
 import { Settings } from "./components/Settings";
@@ -268,14 +270,22 @@ function App() {
         </p>
       </header>
 
-      {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="flex min-h-full flex-col p-4">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="flex min-h-full flex-col p-4 pb-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <TabsList className="grid w-full grid-cols-3 mb-4 shrink-0">
-              <TabsTrigger value="status">Timer</TabsTrigger>
-              <TabsTrigger value="stats">Stats</TabsTrigger>
-              <TabsTrigger value="settings">Config</TabsTrigger>
+              <TabsTrigger value="status">
+                <Clock3 className="h-3.5 w-3.5" />
+                Timer
+              </TabsTrigger>
+              <TabsTrigger value="stats">
+                <ChartNoAxesColumn className="h-3.5 w-3.5" />
+                Stats
+              </TabsTrigger>
+              <TabsTrigger value="settings">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Config
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="status" className="space-y-4 mt-0 flex-1">
@@ -304,7 +314,7 @@ function App() {
             </TabsContent>
           </Tabs>
         </div>
-      </div>
+      </ScrollArea>
     </main>
   );
 }

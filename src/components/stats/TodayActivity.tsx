@@ -1,3 +1,5 @@
+import { Progress } from "@/components/ui/progress";
+
 interface TodayActivityProps {
   activeSeconds: number;
   idleSeconds: number;
@@ -30,12 +32,8 @@ export function TodayActivity({ activeSeconds, idleSeconds }: TodayActivityProps
         </div>
       </div>
 
-      {/* Progress bar */}
-      <div className="relative h-4 bg-muted brutalist-border">
-        <div
-          className="absolute inset-y-0 left-0 bg-primary transition-all duration-300"
-          style={{ width: `${activePercent}%` }}
-        />
+      <div className="relative">
+        <Progress value={activePercent} className="h-4" />
         <div className="absolute inset-y-0 right-2 flex items-center">
           <span className="text-[10px] font-mono-display font-bold text-foreground mix-blend-difference">
             {activePercent}%

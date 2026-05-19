@@ -8,7 +8,11 @@
 import { useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Check, Copy } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { IdleStatus } from "../hooks/useIdleChecker";
 
 interface StatusIndicatorProps {
@@ -118,9 +122,9 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
   return (
     <div className="space-y-3">
       {/* Hero Timer Display */}
-      <div className="brutalist-border bg-card/95 p-6 shadow-sm">
+      <Card className="gap-0 py-0">
         {/* Large Timer */}
-        <div className="text-center py-4">
+        <CardContent className="px-5 py-7 text-center">
           <div
             className={`text-timer tabular-nums ${
               isRunning ? "timer-glow" : "timer-idle"
@@ -139,9 +143,12 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
                     {status.runningTaskName}
                   </span>
                   {canCopyBranch && (
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={handleCopyBranch}
-                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="h-7 px-2 text-[10px]"
                       title="Copy git branch name"
                     >
                       {copied ? (
@@ -155,7 +162,7 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
                           <span>Copy git branch</span>
                         </>
                       )}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {/* Timer metadata */}
@@ -177,8 +184,9 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
                       </Badge>
                     )}
                     {status.runningTimerTags.map((tag) => (
-                      <span
+                      <Badge
                         key={tag.name}
+                        variant="secondary"
                         className="inline-flex items-center px-1.5 py-0 text-[10px] font-medium uppercase tracking-wider"
                         style={{
                           backgroundColor: tag.tag_bg || "#555",
@@ -186,7 +194,7 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
                         }}
                       >
                         {tag.name}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 )}
@@ -197,30 +205,29 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
               </span>
             )}
           </div>
-        </div>
+        </CardContent>
 
         {/* Status Bar */}
-        <div className="brutalist-divider mt-4 pt-3">
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="brutalist-label">Idle</span>
-              <span className="font-mono-display font-semibold tabular-nums">
-                {formatDuration(liveIdleSeconds)}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="brutalist-label">Monitor</span>
-              <span
-                className={`font-mono-display font-semibold ${
-                  status.isRunning ? "text-[var(--success)]" : "text-muted-foreground"
-                }`}
-              >
-                {status.isRunning ? "ON" : "OFF"}
-              </span>
-            </div>
+        <Separator />
+        <CardFooter className="justify-between px-5 py-3 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="brutalist-label">Idle</span>
+            <span className="font-mono-display font-semibold tabular-nums">
+              {formatDuration(liveIdleSeconds)}
+            </span>
           </div>
-        </div>
-      </div>
+          <div className="flex items-center gap-1.5">
+            <span className="brutalist-label">Monitor</span>
+            <span
+              className={`font-mono-display font-semibold ${
+                status.isRunning ? "text-[var(--success)]" : "text-muted-foreground"
+              }`}
+            >
+              {status.isRunning ? "ON" : "OFF"}
+            </span>
+          </div>
+        </CardFooter>
+      </Card>
 
       {/* Last Stopped - Compact One-liner */}
       {status.lastStoppedAt && status.lastStoppedTaskName && (
@@ -236,11 +243,11 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
 
       {/* Error Display */}
       {status.error && (
-        <div className="brutalist-border border-destructive bg-destructive/10 p-3">
-          <p className="text-sm text-destructive font-mono-display">
+        <Alert variant="destructive">
+          <AlertDescription className="font-mono-display">
             {status.error}
-          </p>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
     </div>
   );

@@ -1,10 +1,25 @@
 /**
  * Settings component for configuring ClickUp integration.
- *
- * Branded design with clear sections and visible structure.
  */
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, type FormEvent, type ReactNode } from "react";
+import { Eye, EyeOff, RefreshCw, Save } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { UseUpdaterResult } from "../hooks/useUpdater";
 import {
   getSettings,
   saveSettings,
@@ -12,16 +27,16 @@ import {
   DEFAULT_EXPECTED_HOURS_PER_DAY,
   DEFAULT_WORK_DAYS,
 } from "../lib/store";
-import { UseUpdaterResult } from "../hooks/useUpdater";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 
 interface SettingsProps {
   onSave?: () => void;
   updater: UseUpdaterResult;
+}
+
+interface SettingsSectionProps {
+  title: string;
+  description?: string;
+  children: ReactNode;
 }
 
 const WEEKDAY_OPTIONS = [
@@ -33,6 +48,26 @@ const WEEKDAY_OPTIONS = [
   { value: 5, label: "Sat" },
   { value: 6, label: "Sun" },
 ];
+
+function SettingsSection({
+  title,
+  description,
+  children,
+}: SettingsSectionProps) {
+  return (
+    <Card className="gap-4 py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="brutalist-label">{title}</CardTitle>
+        {description && (
+          <CardDescription className="text-xs leading-relaxed">
+            {description}
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4 px-4">{children}</CardContent>
+    </Card>
+  );
+}
 
 export function Settings({ onSave, updater }: SettingsProps) {
   const [settings, setSettings] = useState<AppSettings>({
@@ -67,7 +102,6 @@ export function Settings({ onSave, updater }: SettingsProps) {
           timeStyle: "short",
         });
 
-  // Load settings on mount
   useEffect(() => {
     async function loadSettings() {
       try {
@@ -91,7 +125,6 @@ export function Settings({ onSave, updater }: SettingsProps) {
     setSaving(true);
 
     try {
-      // Validate required fields
       if (!settings.clickupApiKey.trim()) {
         throw new Error("API Key is required");
       }
@@ -134,25 +167,26 @@ export function Settings({ onSave, updater }: SettingsProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <div className="h-5 w-5 border-2 border-primary border-t-transparent animate-spin" />
-      </div>
+      <Card className="py-8">
+        <CardContent className="flex items-center justify-center px-4">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {/* ClickUp Settings */}
-      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="brutalist-label">ClickUp</div>
-
+    <form onSubmit={handleSubmit} className="space-y-4 pb-2">
+      <SettingsSection
+        title="ClickUp"
+        description="Credentials and idle-stop behavior for ClickUp timers."
+      >
         {error && (
-          <div className="rounded-lg border border-destructive/60 bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
-        {/* API Key */}
         <div className="space-y-2">
           <Label htmlFor="apiKey" className="text-xs uppercase tracking-wider">
             API Key
@@ -172,11 +206,16 @@ export function Settings({ onSave, updater }: SettingsProps) {
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="icon"
               onClick={() => setShowApiKey(!showApiKey)}
-              className="text-xs uppercase tracking-wider"
+              aria-label={showApiKey ? "Hide API key" : "Show API key"}
+              title={showApiKey ? "Hide API key" : "Show API key"}
             >
-              {showApiKey ? "Hide" : "Show"}
+              {showApiKey ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
@@ -192,7 +231,6 @@ export function Settings({ onSave, updater }: SettingsProps) {
           </p>
         </div>
 
-        {/* Team ID */}
         <div className="space-y-2">
           <Label htmlFor="teamId" className="text-xs uppercase tracking-wider">
             Team ID
@@ -212,7 +250,6 @@ export function Settings({ onSave, updater }: SettingsProps) {
           </p>
         </div>
 
-        {/* Idle Threshold */}
         <div className="space-y-2">
           <Label htmlFor="threshold" className="text-xs uppercase tracking-wider">
             Idle Threshold (minutes)
@@ -235,13 +272,12 @@ export function Settings({ onSave, updater }: SettingsProps) {
             Stop timer after this many idle minutes
           </p>
         </div>
-      </div>
+      </SettingsSection>
 
-      {/* GitHub Settings */}
-      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="brutalist-label">GitHub (Optional)</div>
-
-        {/* Token */}
+      <SettingsSection
+        title="GitHub"
+        description="Optional PR counts shown on the timer screen."
+      >
         <div className="space-y-2">
           <Label htmlFor="githubToken" className="text-xs uppercase tracking-wider">
             Personal Access Token
@@ -261,11 +297,16 @@ export function Settings({ onSave, updater }: SettingsProps) {
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="icon"
               onClick={() => setShowGithubToken(!showGithubToken)}
-              className="text-xs uppercase tracking-wider"
+              aria-label={showGithubToken ? "Hide GitHub token" : "Show GitHub token"}
+              title={showGithubToken ? "Hide GitHub token" : "Show GitHub token"}
             >
-              {showGithubToken ? "Hide" : "Show"}
+              {showGithubToken ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
@@ -281,7 +322,6 @@ export function Settings({ onSave, updater }: SettingsProps) {
           </p>
         </div>
 
-        {/* Username */}
         <div className="space-y-2">
           <Label htmlFor="githubUsername" className="text-xs uppercase tracking-wider">
             Username
@@ -297,14 +337,10 @@ export function Settings({ onSave, updater }: SettingsProps) {
             className="text-sm"
           />
         </div>
-      </div>
+      </SettingsSection>
 
-      {/* No Timer Warning Section */}
-      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="brutalist-label">No Timer Warning</div>
-
-        {/* Enable Warning */}
-        <div className="flex items-center justify-between">
+      <SettingsSection title="No Timer Warning">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <Label htmlFor="noTimerWarningEnabled" className="text-sm">
               Warn if no timer running
@@ -324,11 +360,13 @@ export function Settings({ onSave, updater }: SettingsProps) {
 
         {settings.noTimerWarningEnabled && (
           <>
-            <div className="border-t border-border" />
+            <Separator />
 
-            {/* Warning Threshold */}
             <div className="space-y-2">
-              <Label htmlFor="noTimerWarningMinutes" className="text-xs uppercase tracking-wider">
+              <Label
+                htmlFor="noTimerWarningMinutes"
+                className="text-xs uppercase tracking-wider"
+              >
                 Warn after (minutes)
               </Label>
               <Input
@@ -347,8 +385,7 @@ export function Settings({ onSave, updater }: SettingsProps) {
               />
             </div>
 
-            {/* Repeat Warning */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div className="space-y-0.5">
                 <Label htmlFor="noTimerWarningRepeat" className="text-sm">
                   Repeat at intervals
@@ -369,7 +406,7 @@ export function Settings({ onSave, updater }: SettingsProps) {
               />
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div className="space-y-0.5">
                 <Label
                   htmlFor="noTimerWarningRepeatOnlyDuringWorkHours"
@@ -395,13 +432,10 @@ export function Settings({ onSave, updater }: SettingsProps) {
             </div>
           </>
         )}
-      </div>
+      </SettingsSection>
 
-      {/* Meeting Mode Section */}
-      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="brutalist-label">Meeting Mode</div>
-
-        <div className="flex items-center justify-between">
+      <SettingsSection title="Meeting Mode">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <Label htmlFor="meetingDetectionEnabled" className="text-sm">
               Detect meetings and prompt
@@ -421,14 +455,10 @@ export function Settings({ onSave, updater }: SettingsProps) {
             }
           />
         </div>
-      </div>
+      </SettingsSection>
 
-      {/* Display Section */}
-      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="brutalist-label">Display</div>
-
-        {/* Floating Widget */}
-        <div className="flex items-center justify-between">
+      <SettingsSection title="Display">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <Label htmlFor="widgetEnabled" className="text-sm">
               Floating widget
@@ -448,15 +478,12 @@ export function Settings({ onSave, updater }: SettingsProps) {
             }
           />
         </div>
-      </div>
+      </SettingsSection>
 
-      {/* Work Hours Section */}
-      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="brutalist-label">Work Hours</div>
-        <p className="text-[11px] text-muted-foreground">
-          Stats only count active/idle time within this local time window.
-          Overnight windows are supported (for example: 22:00 to 06:00).
-        </p>
+      <SettingsSection
+        title="Work Hours"
+        description="Stats only count active/idle time within this local time window. Overnight windows are supported."
+      >
         <div className="space-y-2">
           <Label
             htmlFor="expectedHoursPerDay"
@@ -484,6 +511,7 @@ export function Settings({ onSave, updater }: SettingsProps) {
             Timer page progress uses this target and multiplies it by selected workdays.
           </p>
         </div>
+
         <div className="space-y-2">
           <Label className="text-xs uppercase tracking-wider">Workdays</Label>
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
@@ -493,7 +521,7 @@ export function Settings({ onSave, updater }: SettingsProps) {
               return (
                 <label
                   key={day.value}
-                  className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2 py-1.5 text-xs"
+                  className="flex items-center gap-2 rounded-lg border border-border/60 bg-input/20 px-2 py-1.5 text-xs transition-colors hover:bg-secondary/60"
                 >
                   <Checkbox
                     checked={checked}
@@ -516,7 +544,9 @@ export function Settings({ onSave, updater }: SettingsProps) {
 
                       setSettings({
                         ...settings,
-                        workdays: settings.workdays.filter((value) => value !== day.value),
+                        workdays: settings.workdays.filter(
+                          (value) => value !== day.value
+                        ),
                       });
                     }}
                     aria-label={`Workday ${day.label}`}
@@ -530,6 +560,7 @@ export function Settings({ onSave, updater }: SettingsProps) {
             Non-workdays are excluded from active/idle stat totals.
           </p>
         </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label htmlFor="workdayStart" className="text-xs uppercase tracking-wider">
@@ -564,13 +595,10 @@ export function Settings({ onSave, updater }: SettingsProps) {
             />
           </div>
         </div>
-      </div>
+      </SettingsSection>
 
-      {/* Updates Section */}
-      <div className="space-y-4 rounded-xl border border-border bg-card/90 p-4 shadow-sm">
-        <div className="brutalist-label">Updates</div>
-
-        <div className="flex items-center justify-between">
+      <SettingsSection title="Updates">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="space-y-0.5">
               <Label className="text-sm">Version</Label>
@@ -591,6 +619,9 @@ export function Settings({ onSave, updater }: SettingsProps) {
             onClick={() => updater.checkForUpdates()}
             disabled={updater.isChecking || updater.isUpdating}
           >
+            <RefreshCw
+              className={updater.isChecking || updater.isUpdating ? "animate-spin" : ""}
+            />
             {updater.isChecking
               ? "Checking..."
               : updater.isUpdating
@@ -599,7 +630,7 @@ export function Settings({ onSave, updater }: SettingsProps) {
           </Button>
         </div>
 
-        <div className="border-t border-border" />
+        <Separator />
 
         <div className="space-y-1">
           <Label className="text-xs uppercase tracking-wider">Status</Label>
@@ -608,17 +639,12 @@ export function Settings({ onSave, updater }: SettingsProps) {
           </p>
           {updater.progress && updater.progress.total && (
             <div className="mt-2">
-              <div className="h-2 overflow-hidden rounded-full border border-border bg-muted">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{
-                    width: `${Math.round(
-                      (updater.progress.downloaded / updater.progress.total) *
-                        100
-                    )}%`,
-                  }}
-                />
-              </div>
+              <Progress
+                value={Math.round(
+                  (updater.progress.downloaded / updater.progress.total) * 100
+                )}
+                className="h-2"
+              />
               <p className="mt-1 text-[10px] text-muted-foreground">
                 {Math.round(updater.progress.downloaded / 1024)} KB /{" "}
                 {Math.round(updater.progress.total / 1024)} KB
@@ -629,13 +655,14 @@ export function Settings({ onSave, updater }: SettingsProps) {
             <p className="text-xs text-destructive">{updater.error}</p>
           )}
         </div>
-      </div>
+      </SettingsSection>
 
-      <Button 
-        type="submit" 
-        className="w-full h-11 text-sm font-semibold uppercase tracking-wider" 
+      <Button
+        type="submit"
+        className="h-11 w-full text-sm font-semibold uppercase tracking-wider"
         disabled={saving}
       >
+        <Save className="h-4 w-4" />
         {saving ? "Saving..." : saved ? "Saved" : "Save Settings"}
       </Button>
     </form>

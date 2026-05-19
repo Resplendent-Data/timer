@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface DailyActivity {
@@ -79,13 +80,13 @@ export function FocusChart({ data }: FocusChartProps) {
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="brutalist-border bg-background/60 px-2 py-1.5">
+        <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
           <p className="text-muted-foreground">Tracked Sessions</p>
           <p className="font-mono-display font-semibold">
             {formatDuration(weekTrackedSeconds)}
           </p>
         </div>
-        <div className="brutalist-border bg-background/60 px-2 py-1.5">
+        <div className="rounded-lg border border-border/70 bg-background/60 px-2 py-1.5">
           <p className="text-muted-foreground">Best Day</p>
           <p className="font-mono-display font-semibold">
             {bestDay ? formatDay(bestDay.date) : "--"}
@@ -93,7 +94,7 @@ export function FocusChart({ data }: FocusChartProps) {
         </div>
       </div>
 
-      <div className="flex h-16 items-center justify-center brutalist-border bg-background/40">
+      <div className="flex h-16 items-center justify-center rounded-lg border border-border bg-background/40">
         {hoveredDay ? (
           <div className="text-center space-y-1 animate-in fade-in duration-150">
             <p className="text-xs font-medium text-foreground">
@@ -151,7 +152,7 @@ export function FocusChart({ data }: FocusChartProps) {
               <div className="flex h-20 w-full items-end justify-center">
                 <div
                   className={cn(
-                    "relative w-full max-w-7 overflow-hidden brutalist-border bg-muted/20 transition-all duration-150",
+                    "relative w-full max-w-7 overflow-hidden rounded-lg border border-border bg-muted/20 transition-all duration-150",
                     isHovered && "scale-x-105",
                     isToday && "border-primary",
                     totalSeconds === 0 && "h-1"
@@ -196,9 +197,12 @@ export function FocusChart({ data }: FocusChartProps) {
         })}
       </div>
       
-      <p className="text-center text-[10px] uppercase tracking-wider text-muted-foreground">
-        Purple = active, gray = idle
-      </p>
+      <div className="flex justify-center gap-2">
+        <Badge variant="outline" className="border-primary/40 text-primary">
+          Purple = active
+        </Badge>
+        <Badge variant="outline">Gray = idle</Badge>
+      </div>
     </div>
   );
 }

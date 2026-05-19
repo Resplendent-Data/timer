@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   AppSettings,
@@ -110,29 +111,34 @@ export function WorkProgress({
   const weeklyExpectedHours = targetHoursPerDay * workdayCount;
 
   return (
-    <div className="brutalist-border bg-card/80 p-3">
-      <div className="mb-2 flex items-end justify-between gap-2">
-        <div>
-          <p className="brutalist-label">Today&apos;s Work</p>
-          <p className="font-mono-display text-xl font-bold tabular-nums">
-            {formatSecondsAsHours(todaySeconds)}
+    <Card className="gap-0 py-3">
+      <CardContent className="px-4">
+        <div className="mb-2 flex items-end justify-between gap-2">
+          <div>
+            <p className="brutalist-label">Today&apos;s Work</p>
+            <p className="font-mono-display text-xl font-bold tabular-nums">
+              {formatSecondsAsHours(todaySeconds)}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Target {formatHours(targetHoursPerDay)}
           </p>
         </div>
-        <p className="text-xs text-muted-foreground">Target {formatHours(targetHoursPerDay)}</p>
-      </div>
 
-      <Progress
-        value={progressPercent}
-        className="h-2 brutalist-border bg-muted"
-        indicatorClassName={progressPercent >= 100 ? "bg-success" : "bg-primary"}
-      />
+        <Progress
+          value={progressPercent}
+          className="h-2"
+          indicatorClassName={progressPercent >= 100 ? "bg-success" : "bg-primary"}
+        />
 
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{loading ? "Loading..." : `${Math.round(progressPercent)}%`}</span>
-        <span>
-          Week {formatSecondsAsHours(weekSeconds)} / {formatHours(weeklyExpectedHours)}
-        </span>
-      </div>
-    </div>
+        <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>{loading ? "Loading..." : `${Math.round(progressPercent)}%`}</span>
+          <span>
+            Week {formatSecondsAsHours(weekSeconds)} /{" "}
+            {formatHours(weeklyExpectedHours)}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

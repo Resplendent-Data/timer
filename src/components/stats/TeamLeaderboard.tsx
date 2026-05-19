@@ -1,5 +1,17 @@
 import { useMemo, useState } from "react";
 import { Crown, Flame, Users } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 export interface TeamLeaderboardUser {
@@ -73,7 +85,8 @@ export function TeamLeaderboard({
 
   if (!hasClickupConfig) {
     return (
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <p className="brutalist-label flex items-center gap-1">
           <Users className="h-3 w-3" />
           Team Time Showdown
@@ -81,30 +94,37 @@ export function TeamLeaderboard({
         <p className="mt-2 text-sm text-muted-foreground">
           Connect ClickUp in Config to unlock leaderboard.
         </p>
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
   if (loading && !leaderboard) {
     return (
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-3 w-3 border border-primary border-t-transparent animate-spin" />
+          <div className="h-3 w-3 animate-spin rounded-full border border-primary border-t-transparent" />
           Loading team leaderboard...
         </div>
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
   if (error && !leaderboard) {
     return (
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <p className="brutalist-label flex items-center gap-1">
           <Users className="h-3 w-3" />
           Team Time Showdown
         </p>
-        <p className="mt-2 text-xs text-destructive">{error}</p>
-      </div>
+        <Alert variant="destructive" className="mt-3">
+          <AlertDescription className="text-xs">{error}</AlertDescription>
+        </Alert>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -112,7 +132,8 @@ export function TeamLeaderboard({
 
   if (users.length === 0) {
     return (
-      <div className="brutalist-border bg-card/70 p-4">
+      <Card className="gap-0 py-0">
+        <CardContent className="px-4 py-4">
         <p className="brutalist-label flex items-center gap-1">
           <Users className="h-3 w-3" />
           Team Time Showdown
@@ -121,12 +142,14 @@ export function TeamLeaderboard({
           No tracked team time in last {leaderboard.window_days} days.
         </p>
         {error && <p className="mt-2 text-[11px] text-destructive">{error}</p>}
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="brutalist-border bg-card/70 p-4 space-y-3">
+    <Card className="gap-0 py-0">
+      <CardContent className="space-y-3 px-4 py-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="brutalist-label flex items-center gap-1">
@@ -154,25 +177,31 @@ export function TeamLeaderboard({
       </div>
 
       {leaderboard.is_partial && leaderboard.warning && (
-        <div className="brutalist-border bg-warning/15 border-warning/40 px-2 py-1.5 text-[11px] text-warning">
-          {leaderboard.warning}
-        </div>
+        <Alert variant="warning" className="px-2 py-1.5">
+          <AlertDescription className="text-[11px]">
+            {leaderboard.warning}
+          </AlertDescription>
+        </Alert>
       )}
       {leaderboard.debug_details && (
-        <details className="brutalist-border bg-background/35 px-2 py-1.5">
+        <details className="rounded-lg border border-border bg-background/35 px-2 py-1.5">
           <summary className="cursor-pointer text-[11px] text-muted-foreground">
             Debug: ClickUp API response details
           </summary>
-          <pre className="mt-2 whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
-            {leaderboard.debug_details}
-          </pre>
+          <ScrollArea className="mt-2 max-h-40">
+            <pre className="whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
+              {leaderboard.debug_details}
+            </pre>
+          </ScrollArea>
         </details>
       )}
 
       {error && (
-        <div className="text-[11px] text-destructive">
-          Last refresh issue: {error}
-        </div>
+        <Alert variant="destructive" className="px-2 py-1.5">
+          <AlertDescription className="text-[11px]">
+            Last refresh issue: {error}
+          </AlertDescription>
+        </Alert>
       )}
 
       <div className="space-y-2">
@@ -190,7 +219,7 @@ export function TeamLeaderboard({
             <div
               key={user.user_id}
               className={cn(
-                "brutalist-border px-2.5 py-2 transition-colors",
+                "rounded-lg border border-border px-2.5 py-2 transition-colors",
                 rankContainerClass(rank),
                 user.running_entry_count > 0 &&
                   "shadow-[0_0_0_1px_rgba(0,214,143,0.4)]"
@@ -201,7 +230,7 @@ export function TeamLeaderboard({
                   <span className="font-mono-display text-xs text-muted-foreground w-6">
                     #{rank}
                   </span>
-                  <div className="h-7 w-7 shrink-0 overflow-hidden brutalist-border bg-muted/60">
+                  <div className="h-7 w-7 shrink-0 overflow-hidden rounded-lg border border-border bg-muted/60">
                     {hasAvatar ? (
                       <img
                         src={user.profile_picture ?? ""}
@@ -243,7 +272,7 @@ export function TeamLeaderboard({
                 </span>
               </div>
 
-              <div className="h-3 brutalist-border bg-muted/35 overflow-hidden">
+              <div className="h-3 overflow-hidden rounded-full bg-muted/35">
                 <div
                   className="flex h-full min-w-[4px]"
                   style={{ width: `${totalWidth}%` }}
@@ -263,51 +292,54 @@ export function TeamLeaderboard({
         })}
       </div>
 
-      <div className="brutalist-border bg-background/35 overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border/80 text-muted-foreground">
-              <th className="px-2 py-1.5 text-left font-normal">Rank</th>
-              <th className="px-2 py-1.5 text-left font-normal">User</th>
-              <th className="px-2 py-1.5 text-right font-normal">Active</th>
-              <th className="px-2 py-1.5 text-right font-normal">
+      <div className="overflow-hidden rounded-lg border border-border bg-background/35">
+        <Table>
+          <TableHeader>
+            <TableRow className="text-muted-foreground">
+              <TableHead>Rank</TableHead>
+              <TableHead>User</TableHead>
+              <TableHead className="text-right">Active</TableHead>
+              <TableHead className="text-right">
                 Past {leaderboard.window_days}d
-              </th>
-              <th className="px-2 py-1.5 text-right font-normal">Total</th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHead>
+              <TableHead className="text-right">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {users.map((user, index) => (
-              <tr key={`table-${user.user_id}`} className="border-b border-border/30">
-                <td className="px-2 py-1.5 font-mono-display text-muted-foreground">
+              <TableRow key={`table-${user.user_id}`}>
+                <TableCell className="font-mono-display text-muted-foreground">
                   #{index + 1}
-                </td>
-                <td className="px-2 py-1.5">
+                </TableCell>
+                <TableCell>
                   <div className="flex items-center gap-2">
                     <span className="truncate">{user.username}</span>
                     {user.running_entry_count > 0 && (
-                      <span className="text-[10px] text-success">live</span>
+                      <Badge variant="outline" className="border-success/40 text-success">
+                        live
+                      </Badge>
                     )}
                   </div>
-                </td>
-                <td className="px-2 py-1.5 text-right font-mono-display text-success">
+                </TableCell>
+                <TableCell className="text-right font-mono-display text-success">
                   {formatDuration(user.active_seconds)}
-                </td>
-                <td className="px-2 py-1.5 text-right font-mono-display text-primary">
+                </TableCell>
+                <TableCell className="text-right font-mono-display text-primary">
                   {formatDuration(user.past_seconds)}
-                </td>
-                <td className="px-2 py-1.5 text-right font-mono-display font-semibold">
+                </TableCell>
+                <TableCell className="text-right font-mono-display font-semibold">
                   {formatDuration(user.total_seconds)}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <p className="text-center text-[10px] uppercase tracking-wider text-muted-foreground">
         Green = active now, purple = past {leaderboard.window_days}-day time
       </p>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

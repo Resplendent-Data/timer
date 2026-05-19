@@ -1,4 +1,6 @@
 import { PauseCircle, ShieldCheck, TimerOff } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 interface IdleEvent {
@@ -58,21 +60,22 @@ export function IdleHistory({ events }: IdleHistoryProps) {
       <div className="flex items-center justify-between">
         <p className="brutalist-label">Interruption Feed</p>
         <div className="flex gap-2 text-[10px] font-mono-display text-muted-foreground">
-          <span className="brutalist-border bg-background/60 px-1.5 py-0.5">
+          <Badge variant="outline" className="bg-background/60">
             {timerStops} timers protected
-          </span>
-          <span className="brutalist-border bg-background/60 px-1.5 py-0.5">
+          </Badge>
+          <Badge variant="outline" className="bg-background/60">
             {formatDuration(totalIdleSeconds)} idle
-          </span>
+          </Badge>
         </div>
       </div>
 
-      <div className="max-h-44 space-y-1.5 overflow-y-auto">
+      <ScrollArea className="max-h-44">
+        <div className="space-y-1.5">
         {events.map((event) => (
           <div
             key={event.id}
             className={cn(
-              "flex items-center justify-between px-3 py-2 text-sm brutalist-border",
+              "flex items-center justify-between rounded-lg border px-3 py-2 text-sm",
               event.timer_stopped
                 ? "bg-primary/10 border-primary/40"
                 : "bg-muted/30 border-border"
@@ -102,11 +105,12 @@ export function IdleHistory({ events }: IdleHistoryProps) {
               </div>
             </div>
             <span className="text-xs font-mono-display text-muted-foreground">
-              {formatDuration(event.duration_secs)} idle
-            </span>
-          </div>
+            {formatDuration(event.duration_secs)} idle
+          </span>
+        </div>
         ))}
-      </div>
+        </div>
+      </ScrollArea>
     </div>
   );
 }
