@@ -1,6 +1,6 @@
 [package]
 name = "resplendent-timer"
-version = "0.16.5"
+version = "0.16.6"
 description = "A Tauri App for tracking time with ClickUp integration"
 authors = ["you"]
 edition = "2021"

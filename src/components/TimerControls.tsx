@@ -608,7 +608,7 @@ export function TimerControls({ status }: TimerControlsProps) {
             <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0">
               Resume
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            <span className="block min-w-0 flex-1 truncate text-sm font-medium">
               {status.lastStoppedTaskName}
             </span>
             {status.lastStoppedTimerIsManual &&
@@ -650,12 +650,12 @@ export function TimerControls({ status }: TimerControlsProps) {
                 onClick={(e) => handleRecentTaskClick(task, e)}
                 disabled={isProcessing}
               >
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="min-w-0 truncate text-sm font-medium">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 overflow-hidden">
+                  <span className="block min-w-0 truncate text-sm font-medium">
                     {task.name}
                   </span>
                   {task.projectPath && (
-                    <span className="min-w-0 truncate text-xs text-muted-foreground">
+                    <span className="block min-w-0 truncate text-xs text-muted-foreground">
                       {task.projectPath}
                     </span>
                   )}

@@ -286,6 +286,23 @@
   box-shadow: 0 10px 20px rgb(8 8 22 / 0.2);
 }
 
+[data-slot="scroll-area"],
+[data-slot="scroll-area-viewport"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-slot="scroll-area-viewport"] {
+  overflow-x: hidden !important;
+}
+
+[data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
 [data-slot="badge"] {
   border-radius: 999px;
   text-transform: uppercase;

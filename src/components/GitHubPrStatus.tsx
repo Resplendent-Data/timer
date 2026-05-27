@@ -116,43 +116,43 @@ export function GitHubPrStatus({ settings, isVisible }: GitHubPrStatusProps) {
     <div ref={panelRef} className="relative">
       <Card className="gap-0 py-0">
         <CardContent className="px-2 py-1">
-          <div className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
-            <GitPullRequest className="h-3 w-3 shrink-0" />
+          <div className="grid min-w-0 grid-cols-3 gap-1 text-[11px] text-muted-foreground">
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => toggleCategory("review")}
-              className={`h-7 px-2 text-[11px] normal-case tracking-normal ${
+              className={`h-7 min-w-0 overflow-hidden px-1 text-[11px] normal-case tracking-normal ${
                 expandedCategory === "review" ? "text-foreground" : ""
               }`}
             >
+              <GitPullRequest className="h-3 w-3 shrink-0" />
               <Badge variant="secondary">{counts.review_requests}</Badge>
-              to review
+              <span className="min-w-0 truncate">to review</span>
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => toggleCategory("open")}
-              className={`h-7 px-2 text-[11px] normal-case tracking-normal ${
+              className={`h-7 min-w-0 overflow-hidden px-1 text-[11px] normal-case tracking-normal ${
                 expandedCategory === "open" ? "text-foreground" : ""
               }`}
             >
               <Badge variant="secondary">{counts.my_open_prs}</Badge>
-              open
+              <span className="min-w-0 truncate">open</span>
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => toggleCategory("no_reviewers")}
-              className={`h-7 px-2 text-[11px] normal-case tracking-normal ${
+              className={`h-7 min-w-0 overflow-hidden px-1 text-[11px] normal-case tracking-normal ${
                 expandedCategory === "no_reviewers" ? "text-foreground" : ""
               }`}
             >
               <Badge variant="secondary">{counts.needs_reviewers}</Badge>
-              no reviewers
+              <span className="min-w-0 truncate">no reviewers</span>
             </Button>
           </div>
         </CardContent>
