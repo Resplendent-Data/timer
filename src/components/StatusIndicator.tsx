@@ -137,9 +137,9 @@ export function StatusIndicator({ status, nowMs }: StatusIndicatorProps) {
           <div className="mt-3">
             {isRunning ? (
               <div className="space-y-2">
-                <div className="flex items-center justify-center gap-2">
+                <div className="mx-auto flex max-w-full items-center justify-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-[var(--success)] animate-pulse" />
-                  <span className="text-sm font-medium truncate max-w-[250px]">
+                  <span className="min-w-0 max-w-[250px] truncate text-sm font-medium">
                     {status.runningTaskName}
                   </span>
                   {canCopyBranch && (

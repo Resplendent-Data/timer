@@ -257,7 +257,7 @@ function App() {
   }, [idleStatus, settings]);
 
   return (
-    <main className="h-screen w-full flex flex-col bg-background text-foreground">
+    <main className="h-screen w-full min-w-0 overflow-hidden flex flex-col bg-background text-foreground">
       <header
         className="sticky top-0 z-10 shrink-0 border-b border-border/80 bg-background/95 px-5 pb-4 pt-7 shadow-sm backdrop-blur select-none"
         data-tauri-drag-region
@@ -271,8 +271,8 @@ function App() {
       </header>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="flex min-h-full flex-col p-4 pb-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+        <div className="flex min-h-full min-w-0 flex-col p-4 pb-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="min-w-0 flex-1 flex flex-col">
             <TabsList className="grid w-full grid-cols-3 mb-4 shrink-0">
               <TabsTrigger value="status">
                 <Clock3 className="h-3.5 w-3.5" />
@@ -288,7 +288,7 @@ function App() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="status" className="space-y-4 mt-0 flex-1">
+            <TabsContent value="status" className="min-w-0 space-y-4 mt-0 flex-1">
               <GitHubPrStatus settings={settings} isVisible={isWindowVisible} />
               <StatusIndicator status={idleStatus} nowMs={nowMs} />
               <WorkProgress
@@ -300,7 +300,7 @@ function App() {
               <TimerControls status={idleStatus} />
             </TabsContent>
 
-            <TabsContent value="stats" className="mt-0 flex-1">
+            <TabsContent value="stats" className="min-w-0 mt-0 flex-1">
               <Stats
                 status={idleStatus}
                 settings={settings}
@@ -309,7 +309,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="settings" className="mt-0 flex-1">
+            <TabsContent value="settings" className="min-w-0 mt-0 flex-1">
               <Settings onSave={() => setActiveTab("status")} updater={updater} />
             </TabsContent>
           </Tabs>

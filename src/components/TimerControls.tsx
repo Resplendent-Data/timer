@@ -599,16 +599,16 @@ export function TimerControls({ status }: TimerControlsProps) {
         (status.lastStoppedTaskId || status.lastStoppedTimerIsManual) && (
         <Button
           variant="secondary"
-          className="h-auto w-full justify-start rounded-lg border border-border py-3 text-left"
+          className="h-auto w-full min-w-0 justify-start overflow-hidden rounded-lg border border-border py-3 text-left"
           onClick={handleResumeTimer}
           disabled={isProcessing}
         >
-          <div className="flex items-center gap-2 w-full min-w-0">
+          <div className="flex w-full min-w-0 items-center gap-2">
             <RotateCcw className="h-4 w-4 shrink-0 text-primary" />
             <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0">
               Resume
             </span>
-            <span className="font-medium text-sm truncate">
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {status.lastStoppedTaskName}
             </span>
             {status.lastStoppedTimerIsManual &&
@@ -646,16 +646,16 @@ export function TimerControls({ status }: TimerControlsProps) {
                 key={task.id}
                 type="button"
                 variant="ghost"
-                className="h-auto w-full justify-start rounded-none px-3 py-2.5 text-left normal-case tracking-normal"
+                className="h-auto w-full min-w-0 justify-start overflow-hidden rounded-none px-3 py-2.5 text-left normal-case tracking-normal"
                 onClick={(e) => handleRecentTaskClick(task, e)}
                 disabled={isProcessing}
               >
-                <div className="flex flex-col gap-0.5">
-                  <span className="font-medium text-sm truncate">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="min-w-0 truncate text-sm font-medium">
                     {task.name}
                   </span>
                   {task.projectPath && (
-                    <span className="text-xs text-muted-foreground truncate">
+                    <span className="min-w-0 truncate text-xs text-muted-foreground">
                       {task.projectPath}
                     </span>
                   )}
