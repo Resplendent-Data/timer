@@ -58,6 +58,7 @@ pub fn start_sleep_observer(app_handle: AppHandle) -> Result<(), String> {
     // Create block for screen sleep (lid close, display sleep)
     let screen_sleep_block = RcBlock::new(move |_notification: NonNull<NSNotification>| {
         println!("[resplendent] macOS screens did sleep - emitting system-sleep event");
+        crate::tracker::mark_system_sleep();
         if let Err(e) = app_handle_screens.emit(SYSTEM_SLEEP_EVENT, ()) {
             eprintln!("[resplendent] Failed to emit system-sleep event: {}", e);
         }
@@ -66,6 +67,7 @@ pub fn start_sleep_observer(app_handle: AppHandle) -> Result<(), String> {
     // Create block for system sleep
     let system_sleep_block = RcBlock::new(move |_notification: NonNull<NSNotification>| {
         println!("[resplendent] macOS system will sleep - emitting system-sleep event");
+        crate::tracker::mark_system_sleep();
         if let Err(e) = app_handle_system.emit(SYSTEM_SLEEP_EVENT, ()) {
             eprintln!("[resplendent] Failed to emit system-sleep event: {}", e);
         }

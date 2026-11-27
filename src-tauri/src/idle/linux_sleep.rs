@@ -101,6 +101,7 @@ member='PrepareForShutdown'";
                                 println!(
                                     "[resplendent] Linux system preparing for sleep - emitting system-sleep event"
                                 );
+                                crate::tracker::mark_system_sleep();
                                 if let Err(e) = app_handle.emit(SYSTEM_SLEEP_EVENT, ()) {
                                     eprintln!(
                                         "[resplendent] Failed to emit system-sleep event: {}",

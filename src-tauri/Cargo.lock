@@ -3538,7 +3538,7 @@ dependencies = [
 
 [[package]]
 name = "resplendent-timer"
-version = "0.16.6"
+version = "1.0.0"
 dependencies = [
  "block2",
  "chrono",
@@ -4813,7 +4813,6 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",

@@ -1,38 +1,42 @@
 /**
  * Secure storage wrapper using Tauri's plugin-store.
  *
- * Provides type-safe access to application settings stored in an
- * encrypted JSON file managed by Tauri.
+ * Preserves full backward compatibility with existing `settings.json` keys while
+ * adding smart backdating and post-stop wrap-up preferences.
  */
 
 import { emit } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { DEFAULT_WORK_DAYS, normalizeWorkdays } from "./workSchedule";
 
-// Use LazyStore which handles initialization on first access
 const store = new LazyStore("settings.json");
+
 export { DEFAULT_WORK_DAYS };
 export const DEFAULT_EXPECTED_HOURS_PER_DAY = 8;
+export const DEFAULT_MIN_BACKDATE_MINUTES = 2;
+export const DEFAULT_MAX_BACKDATE_MINUTES = 120;
 export const SETTINGS_UPDATED_EVENT = "settings-updated";
 
-/**
- * Widget position for the always-on-top timer widget.
- */
 export interface WidgetPosition {
   x: number;
   y: number;
 }
 
-/**
- * Application settings stored securely.
- */
 export interface AppSettings {
   /** ClickUp API key (pk_...) */
   clickupApiKey: string;
   /** ClickUp team/workspace ID */
   clickupTeamId: string;
-  /** Minutes of inactivity before stopping timer */
+  /** Minutes of inactivity before auto-stopping timer */
   idleThresholdMinutes: number;
+  /** Automatically backdate timer start to continuous untracked active time */
+  autoBackdateEnabled: boolean;
+  /** Minimum continuous active minutes before backdating activates */
+  minBackdateMinutes: number;
+  /** Maximum lookback window (minutes) for automatic backdating */
+  maxBackdateMinutes: number;
+  /** Open the Session Wrap-Up sheet after manually stopping a timer */
+  promptDescriptionOnStop: boolean;
   /** Whether to warn when no timer is running */
   noTimerWarningEnabled: boolean;
   /** Minutes of activity without a timer before warning */
@@ -59,54 +63,91 @@ export interface AppSettings {
   githubUsername?: string;
 }
 
-/**
- * A recent task for quick access.
- */
 export interface RecentTask {
   id: string;
   name: string;
-  /** Optional project path for display */
   projectPath?: string;
-  /** Timestamp when this task was last started */
   lastUsedAt: number;
 }
 
-const MAX_RECENT_TASKS = 5;
+const MAX_RECENT_TASKS = 6;
 
-/**
- * Get all application settings.
- *
- * @returns The current settings, or null if not configured
- */
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  clickupApiKey: "",
+  clickupTeamId: "",
+  idleThresholdMinutes: 10,
+  autoBackdateEnabled: true,
+  minBackdateMinutes: DEFAULT_MIN_BACKDATE_MINUTES,
+  maxBackdateMinutes: DEFAULT_MAX_BACKDATE_MINUTES,
+  promptDescriptionOnStop: true,
+  noTimerWarningEnabled: true,
+  noTimerWarningMinutes: 10,
+  noTimerWarningRepeat: false,
+  noTimerWarningRepeatOnlyDuringWorkHours: true,
+  meetingDetectionEnabled: false,
+  widgetEnabled: false,
+  workdayStart: "08:00",
+  workdayEnd: "17:00",
+  workdays: [...DEFAULT_WORK_DAYS],
+  expectedHoursPerDay: DEFAULT_EXPECTED_HOURS_PER_DAY,
+  githubToken: "",
+  githubUsername: "",
+};
+
 export async function getSettings(): Promise<AppSettings | null> {
   const apiKey = await store.get<string>("clickupApiKey");
   const teamId = await store.get<string>("clickupTeamId");
-  const threshold = await store.get<number>("idleThresholdMinutes");
-  const noTimerWarningEnabled = await store.get<boolean>("noTimerWarningEnabled");
-  const noTimerWarningMinutes = await store.get<number>("noTimerWarningMinutes");
-  const noTimerWarningRepeat = await store.get<boolean>("noTimerWarningRepeat");
-  const noTimerWarningRepeatOnlyDuringWorkHours = await store.get<boolean>(
-    "noTimerWarningRepeatOnlyDuringWorkHours"
-  );
-  const meetingDetectionEnabled = await store.get<boolean>("meetingDetectionEnabled");
-  const workdayStart = await store.get<string>("workdayStart");
-  const workdayEnd = await store.get<string>("workdayEnd");
-  const workdays = await store.get<number[]>("workdays");
-  const expectedHoursPerDay = await store.get<number>("expectedHoursPerDay");
-  const githubToken = await store.get<string>("githubToken");
-  const githubUsername = await store.get<string>("githubUsername");
 
-  // Return null if required fields are not set
   if (!apiKey || !teamId) {
     return null;
   }
 
-  const widgetEnabled = await store.get<boolean>("widgetEnabled");
+  const [
+    threshold,
+    autoBackdateEnabled,
+    minBackdateMinutes,
+    maxBackdateMinutes,
+    promptDescriptionOnStop,
+    noTimerWarningEnabled,
+    noTimerWarningMinutes,
+    noTimerWarningRepeat,
+    noTimerWarningRepeatOnlyDuringWorkHours,
+    meetingDetectionEnabled,
+    widgetEnabled,
+    workdayStart,
+    workdayEnd,
+    workdays,
+    expectedHoursPerDay,
+    githubToken,
+    githubUsername,
+  ] = await Promise.all([
+    store.get<number>("idleThresholdMinutes"),
+    store.get<boolean>("autoBackdateEnabled"),
+    store.get<number>("minBackdateMinutes"),
+    store.get<number>("maxBackdateMinutes"),
+    store.get<boolean>("promptDescriptionOnStop"),
+    store.get<boolean>("noTimerWarningEnabled"),
+    store.get<number>("noTimerWarningMinutes"),
+    store.get<boolean>("noTimerWarningRepeat"),
+    store.get<boolean>("noTimerWarningRepeatOnlyDuringWorkHours"),
+    store.get<boolean>("meetingDetectionEnabled"),
+    store.get<boolean>("widgetEnabled"),
+    store.get<string>("workdayStart"),
+    store.get<string>("workdayEnd"),
+    store.get<number[]>("workdays"),
+    store.get<number>("expectedHoursPerDay"),
+    store.get<string>("githubToken"),
+    store.get<string>("githubUsername"),
+  ]);
 
   return {
     clickupApiKey: apiKey,
     clickupTeamId: teamId,
     idleThresholdMinutes: threshold ?? 10,
+    autoBackdateEnabled: autoBackdateEnabled ?? true,
+    minBackdateMinutes: minBackdateMinutes ?? DEFAULT_MIN_BACKDATE_MINUTES,
+    maxBackdateMinutes: maxBackdateMinutes ?? DEFAULT_MAX_BACKDATE_MINUTES,
+    promptDescriptionOnStop: promptDescriptionOnStop ?? true,
     noTimerWarningEnabled: noTimerWarningEnabled ?? true,
     noTimerWarningMinutes: noTimerWarningMinutes ?? 10,
     noTimerWarningRepeat: noTimerWarningRepeat ?? false,
@@ -117,22 +158,20 @@ export async function getSettings(): Promise<AppSettings | null> {
     workdayStart: workdayStart ?? "08:00",
     workdayEnd: workdayEnd ?? "17:00",
     workdays: normalizeWorkdays(workdays),
-    expectedHoursPerDay:
-      expectedHoursPerDay ?? DEFAULT_EXPECTED_HOURS_PER_DAY,
+    expectedHoursPerDay: expectedHoursPerDay ?? DEFAULT_EXPECTED_HOURS_PER_DAY,
     githubToken: githubToken ?? undefined,
     githubUsername: githubUsername ?? undefined,
   };
 }
 
-/**
- * Save application settings.
- *
- * @param settings - The settings to save
- */
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  await store.set("clickupApiKey", settings.clickupApiKey);
-  await store.set("clickupTeamId", settings.clickupTeamId);
+  await store.set("clickupApiKey", settings.clickupApiKey.trim());
+  await store.set("clickupTeamId", settings.clickupTeamId.trim());
   await store.set("idleThresholdMinutes", settings.idleThresholdMinutes);
+  await store.set("autoBackdateEnabled", settings.autoBackdateEnabled);
+  await store.set("minBackdateMinutes", settings.minBackdateMinutes);
+  await store.set("maxBackdateMinutes", settings.maxBackdateMinutes);
+  await store.set("promptDescriptionOnStop", settings.promptDescriptionOnStop);
   await store.set("noTimerWarningEnabled", settings.noTimerWarningEnabled);
   await store.set("noTimerWarningMinutes", settings.noTimerWarningMinutes);
   await store.set("noTimerWarningRepeat", settings.noTimerWarningRepeat);
@@ -146,40 +185,26 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   await store.set("workdayEnd", settings.workdayEnd);
   await store.set("workdays", normalizeWorkdays(settings.workdays));
   await store.set("expectedHoursPerDay", settings.expectedHoursPerDay);
-  await store.set("githubToken", settings.githubToken ?? "");
-  await store.set("githubUsername", settings.githubUsername ?? "");
+  await store.set("githubToken", settings.githubToken?.trim() ?? "");
+  await store.set("githubUsername", settings.githubUsername?.trim() ?? "");
   await store.save();
   await emit(SETTINGS_UPDATED_EVENT);
 }
 
-/**
- * Check if the application has been configured with required settings.
- *
- * @returns true if all required settings are present
- */
 export async function isConfigured(): Promise<boolean> {
   const settings = await getSettings();
   return settings !== null;
 }
 
-/**
- * Clear all stored settings.
- */
 export async function clearSettings(): Promise<void> {
   await store.clear();
   await store.save();
   await emit(SETTINGS_UPDATED_EVENT);
 }
 
-/**
- * Get the list of recent tasks.
- *
- * @returns Array of recent tasks, sorted by most recently used first
- */
 export async function getRecentTasks(): Promise<RecentTask[]> {
   try {
     const tasks = await store.get<RecentTask[]>("recentTasks");
-    console.log("[store] getRecentTasks:", tasks);
     return tasks ?? [];
   } catch (err) {
     console.error("[store] Error getting recent tasks:", err);
@@ -187,22 +212,12 @@ export async function getRecentTasks(): Promise<RecentTask[]> {
   }
 }
 
-/**
- * Add a task to the recent tasks list.
- * If the task already exists, it will be moved to the front.
- * Maintains a maximum of MAX_RECENT_TASKS entries.
- *
- * @param task - The task to add
- */
-export async function addRecentTask(task: Omit<RecentTask, "lastUsedAt">): Promise<void> {
-  console.log("[store] addRecentTask:", task);
+export async function addRecentTask(
+  task: Omit<RecentTask, "lastUsedAt">
+): Promise<RecentTask[]> {
   try {
     const existing = await getRecentTasks();
-
-    // Remove if already exists (we'll add it to the front)
     const filtered = existing.filter((t) => t.id !== task.id);
-
-    // Add new task at the front
     const updated: RecentTask[] = [
       {
         id: task.id,
@@ -213,32 +228,23 @@ export async function addRecentTask(task: Omit<RecentTask, "lastUsedAt">): Promi
       ...filtered,
     ].slice(0, MAX_RECENT_TASKS);
 
-    console.log("[store] Saving recent tasks:", updated);
     await store.set("recentTasks", updated);
     await store.save();
-    console.log("[store] Recent tasks saved successfully");
+    return updated;
   } catch (err) {
     console.error("[store] Error adding recent task:", err);
+    return [];
   }
 }
 
-/**
- * Remove a task from the recent tasks list.
- *
- * @param taskId - The ID of the task to remove
- */
-export async function removeRecentTask(taskId: string): Promise<void> {
+export async function removeRecentTask(taskId: string): Promise<RecentTask[]> {
   const existing = await getRecentTasks();
   const filtered = existing.filter((t) => t.id !== taskId);
   await store.set("recentTasks", filtered);
   await store.save();
+  return filtered;
 }
 
-/**
- * Get the saved widget position.
- *
- * @returns The widget position, or null if not saved
- */
 export async function getWidgetPosition(): Promise<WidgetPosition | null> {
   try {
     const position = await store.get<WidgetPosition>("widgetPosition");
@@ -249,14 +255,8 @@ export async function getWidgetPosition(): Promise<WidgetPosition | null> {
   }
 }
 
-/**
- * Save the widget position.
- *
- * @param position - The position to save
- */
 export async function saveWidgetPosition(position: WidgetPosition): Promise<void> {
   try {
-    // Only save if position is reasonable (on screen)
     if (position.x >= 0 && position.x < 5000 && position.y >= 0 && position.y < 2000) {
       await store.set("widgetPosition", position);
       await store.save();
@@ -266,9 +266,6 @@ export async function saveWidgetPosition(position: WidgetPosition): Promise<void
   }
 }
 
-/**
- * Clear the saved widget position.
- */
 export async function clearWidgetPosition(): Promise<void> {
   try {
     await store.delete("widgetPosition");
@@ -278,26 +275,6 @@ export async function clearWidgetPosition(): Promise<void> {
   }
 }
 
-/**
- * Get just the widget enabled setting without requiring full config.
- * This is used during app startup to determine if we should show the widget.
- *
- * @returns Whether the widget is enabled
- */
-export async function isWidgetEnabled(): Promise<boolean> {
-  try {
-    const enabled = await store.get<boolean>("widgetEnabled");
-    return enabled ?? false;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Get the timestamp of the most recent update check.
- *
- * @returns Unix timestamp in milliseconds, or null if never checked
- */
 export async function getLastUpdateCheckAt(): Promise<number | null> {
   try {
     const timestamp = await store.get<number>("lastUpdateCheckAt");
@@ -308,11 +285,6 @@ export async function getLastUpdateCheckAt(): Promise<number | null> {
   }
 }
 
-/**
- * Save the timestamp of the most recent update check.
- *
- * @param timestamp - Unix timestamp in milliseconds
- */
 export async function setLastUpdateCheckAt(timestamp: number): Promise<void> {
   try {
     await store.set("lastUpdateCheckAt", timestamp);

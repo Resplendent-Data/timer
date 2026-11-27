@@ -1,7 +1,7 @@
 //! Resplendent Timer - A Tauri application for time tracking with ClickUp integration.
 //!
-//! This application monitors user idle time and automatically stops ClickUp timers
-//! when the user has been inactive for a configurable period.
+//! Monitors user idle and active-untracked time, provides 1-click timer start with
+//! automatic backdating, and supports post-stop session wrap-up notes.
 
 mod clickup;
 mod github;
@@ -9,12 +9,14 @@ mod idle;
 mod idle_monitor;
 mod meeting_detection;
 mod stats;
+mod tracker;
 
 use std::sync::Mutex;
 
 use clickup::{
-    IdleCheckResult, RunningTimerInfo, RuntimeSnapshot, TaskSearchResult,
-    TeamLeaderboardResponse, TimeEntryTag,
+    IdleCheckResult, RunningTimerInfo, RuntimeSnapshot, StoppedTimeEntry, TaskSearchResult,
+    TeamLeaderboardResponse, TimeEntrySummary, TimeEntryTag, UpdateTimeEntryPayload,
+    WorkspaceConnectionInfo,
 };
 use meeting_detection::MeetingPresence;
 use serde::Serialize;
@@ -26,6 +28,7 @@ use tauri::{
     webview::WebviewWindowBuilder,
     Emitter, Manager,
 };
+use tracker::ActiveUntrackedSnapshot;
 
 /// State to hold reference to the timer display menu item for dynamic updates.
 struct TrayMenuState {
@@ -38,7 +41,7 @@ struct AppVisibilityChange {
     focused: bool,
 }
 
-/// Tauri command to search for tasks.
+/// Search for ClickUp tasks in a workspace.
 #[tauri::command]
 async fn search_tasks(
     api_key: String,
@@ -48,15 +51,111 @@ async fn search_tasks(
     clickup::search_tasks(api_key, team_id, query).await
 }
 
-/// Tauri command to start a timer for a task.
-///
-/// # Arguments
-///
-/// * `api_key` - ClickUp API key
-/// * `team_id` - ClickUp team/workspace ID
-/// * `task_id` - The task ID to start the timer for
-/// * `billable` - Whether the time entry is billable (defaults to false)
-/// * `tags` - Optional list of tag names to apply
+/// Unified 1-click timer start (manual or task-linked) with optional active-time backdating.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn start_quick_timer(
+    api_key: String,
+    team_id: String,
+    task_id: Option<String>,
+    description: Option<String>,
+    billable: Option<bool>,
+    tags: Option<Vec<String>>,
+    backdate_start_ms: Option<i64>,
+    max_backdate_secs: Option<u64>,
+) -> Result<RunningTimerInfo, String> {
+    clickup::start_quick_timer(
+        api_key,
+        team_id,
+        task_id,
+        description,
+        billable.unwrap_or(false),
+        tags,
+        backdate_start_ms,
+        max_backdate_secs,
+    )
+    .await
+}
+
+/// Stop the running ClickUp timer, finalize any pending backdate, and return the stopped entry
+/// metadata for the post-stop Session Wrap-Up flow.
+#[tauri::command]
+async fn stop_and_capture_timer(
+    api_key: String,
+    team_id: String,
+) -> Result<StoppedTimeEntry, String> {
+    clickup::stop_and_capture_timer(api_key, team_id).await
+}
+
+/// Update an existing ClickUp time entry (post-stop Wrap-Up description, task, tags, billable, start/end).
+#[tauri::command]
+async fn update_time_entry(
+    api_key: String,
+    team_id: String,
+    entry_id: String,
+    payload: UpdateTimeEntryPayload,
+) -> Result<TimeEntrySummary, String> {
+    clickup::update_time_entry(api_key, team_id, entry_id, payload).await
+}
+
+/// Fetch recent ClickUp time entries (default last 14 days) for resumable work history.
+#[tauri::command]
+async fn get_recent_time_entries(
+    api_key: String,
+    team_id: String,
+    days: Option<i64>,
+) -> Result<Vec<TimeEntrySummary>, String> {
+    clickup::get_recent_time_entries(api_key, team_id, days).await
+}
+
+/// Fetch today's ClickUp time entries for the authenticated user.
+#[tauri::command]
+async fn get_today_time_entries(
+    api_key: String,
+    team_id: String,
+) -> Result<Vec<TimeEntrySummary>, String> {
+    clickup::get_today_time_entries(api_key, team_id).await
+}
+
+/// Validate ClickUp API credentials and workspace access.
+#[tauri::command]
+async fn test_clickup_connection(
+    api_key: String,
+    team_id: String,
+) -> Result<WorkspaceConnectionInfo, String> {
+    clickup::test_clickup_connection(api_key, team_id).await
+}
+
+/// Return current untracked continuous active-session snapshot (zero network).
+#[tauri::command]
+async fn get_active_untracked_state() -> Result<ActiveUntrackedSnapshot, String> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    if let Ok(idle_secs) = idle_monitor::get_idle_time_secs().await {
+        tracker::observe_sample(now_ms, idle_secs);
+    }
+    Ok(tracker::get_snapshot(now_ms))
+}
+
+/// Reset the untracked active anchor (e.g., when dismissing an untracked session).
+#[tauri::command]
+fn reset_untracked_session() {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    tracker::reset_untracked_session(now_ms);
+}
+
+/// Trigger a 1-click start or stop-to-wrapup from the floating widget pill.
+#[tauri::command]
+async fn widget_toggle_timer(app: tauri::AppHandle, is_running: bool) -> Result<(), String> {
+    if is_running {
+        let _ = show_and_focus_main_window(&app);
+        app.emit("menu-stop-timer", ()).map_err(|e| e.to_string())?;
+    } else {
+        app.emit("menu-quick-start", ()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Start a timer for a task (compatibility command).
 #[tauri::command]
 async fn start_timer(
     api_key: String,
@@ -68,13 +167,13 @@ async fn start_timer(
     clickup::start_timer(api_key, team_id, task_id, billable.unwrap_or(false), tags).await
 }
 
-/// Tauri command to stop the current timer.
+/// Stop the current timer (compatibility command).
 #[tauri::command]
 async fn stop_timer(api_key: String, team_id: String) -> Result<(), String> {
     clickup::stop_timer(api_key, team_id).await
 }
 
-/// Tauri command to get all time entry tags for a workspace.
+/// Get all time entry tags for a workspace.
 #[tauri::command]
 async fn get_time_entry_tags(
     api_key: String,
@@ -83,15 +182,7 @@ async fn get_time_entry_tags(
     clickup::get_time_entry_tags(api_key, team_id).await
 }
 
-/// Tauri command to start a manual timer (without a linked task).
-///
-/// # Arguments
-///
-/// * `api_key` - ClickUp API key
-/// * `team_id` - ClickUp team/workspace ID
-/// * `description` - Optional description for the time entry
-/// * `billable` - Whether the time entry is billable (defaults to false)
-/// * `tags` - Optional list of tag names to apply
+/// Start a manual timer without a linked task (compatibility command).
 #[tauri::command]
 async fn start_manual_timer(
     api_key: String,
@@ -110,60 +201,36 @@ async fn start_manual_timer(
     .await
 }
 
-/// Tauri command to check idle time and stop ClickUp timer if needed.
-///
-/// # Arguments
-///
-/// * `api_key` - ClickUp API key
-/// * `team_id` - ClickUp team/workspace ID
-/// * `idle_threshold_secs` - Seconds of inactivity before stopping timer (default: 600)
+/// Check idle time and stop ClickUp timer if needed.
 #[tauri::command]
 async fn check_and_stop_timer(
     api_key: String,
     team_id: String,
     idle_threshold_secs: Option<u64>,
 ) -> Result<IdleCheckResult, String> {
-    let threshold = idle_threshold_secs.unwrap_or(600); // Default 10 minutes
+    let threshold = idle_threshold_secs.unwrap_or(600);
     clickup::check_and_stop_timer_impl(api_key, team_id, threshold).await
 }
 
-/// Tauri command to get the current idle time in seconds.
+/// Get the current idle time in seconds.
 #[tauri::command]
 async fn get_idle_time() -> Result<u64, String> {
     idle_monitor::get_idle_time_secs().await
 }
 
-/// Tauri command to get the currently running ClickUp timer.
-///
-/// # Arguments
-///
-/// * `api_key` - ClickUp API key
-/// * `team_id` - ClickUp team/workspace ID
-///
-/// # Returns
-///
-/// The name of the currently running task, or null if no timer is running.
+/// Get the currently running ClickUp timer name.
 #[tauri::command]
 async fn get_running_timer(api_key: String, team_id: String) -> Result<Option<String>, String> {
     clickup::get_running_timer(api_key, team_id).await
 }
 
-/// Debug command to test the ClickUp API and return raw response
+/// Debug command to test the ClickUp API and return raw response.
 #[tauri::command]
 async fn debug_clickup_api(api_key: String, team_id: String) -> Result<String, String> {
     clickup::debug_api_call(api_key, team_id).await
 }
 
-/// Tauri command to get detailed info about the running timer including start time.
-///
-/// # Arguments
-///
-/// * `api_key` - ClickUp API key
-/// * `team_id` - ClickUp team/workspace ID
-///
-/// # Returns
-///
-/// Info about the running timer (name and start time), or null if no timer is running.
+/// Get detailed info about the running timer including start time.
 #[tauri::command]
 async fn get_running_timer_info(
     api_key: String,
@@ -172,7 +239,7 @@ async fn get_running_timer_info(
     clickup::get_running_timer_info(api_key, team_id).await
 }
 
-/// Tauri command to fetch a single runtime snapshot for the background scheduler.
+/// Fetch a single runtime snapshot for the background scheduler.
 #[tauri::command]
 async fn poll_runtime(
     api_key: String,
@@ -182,51 +249,25 @@ async fn poll_runtime(
     clickup::poll_runtime_impl(api_key, team_id, idle_threshold_secs.unwrap_or(600)).await
 }
 
-/// Tauri command to ensure the "rt" tag exists in the workspace.
-///
-/// This should be called on app startup/settings save to ensure the tag exists
-/// before it's needed.
-///
-/// # Arguments
-///
-/// * `api_key` - ClickUp API key
-/// * `team_id` - ClickUp team/workspace ID
-///
-/// # Returns
-///
-/// Ok(true) if tag was created, Ok(false) if it already existed
+/// Ensure the "rt" tag exists in the workspace.
 #[tauri::command]
 async fn ensure_rt_tag(api_key: String, team_id: String) -> Result<bool, String> {
     clickup::ensure_rt_tag_exists(api_key, team_id).await
 }
 
-/// Tauri command to ensure the "meeting" tag exists in the workspace.
+/// Ensure the "meeting" tag exists in the workspace.
 #[tauri::command]
 async fn ensure_meeting_tag(api_key: String, team_id: String) -> Result<bool, String> {
     clickup::ensure_meeting_tag_exists(api_key, team_id).await
 }
 
-/// Tauri command to get current meeting presence signal.
+/// Get current meeting presence signal.
 #[tauri::command]
 fn get_meeting_presence() -> Result<MeetingPresence, String> {
     meeting_detection::get_meeting_presence()
 }
 
-/// Tauri command to add the "rt" tag to a running time entry.
-///
-/// Used to tag time entries that were started externally (e.g., from ClickUp web)
-/// while the Resplendent Timer app is running.
-///
-/// # Arguments
-///
-/// * `api_key` - ClickUp API key
-/// * `team_id` - ClickUp team/workspace ID
-/// * `time_entry_id` - The ID of the time entry to tag
-/// * `existing_tags` - Current tags on the time entry (to preserve them)
-///
-/// # Returns
-///
-/// Ok(true) if tag was added, Ok(false) if it was already present
+/// Add the "rt" tag to an externally started running time entry.
 #[tauri::command]
 async fn add_rt_tag_to_time_entry(
     api_key: String,
@@ -237,11 +278,7 @@ async fn add_rt_tag_to_time_entry(
     clickup::add_rt_tag_to_time_entry(api_key, team_id, time_entry_id, existing_tags).await
 }
 
-/// Tauri command to update the tray menu timer display text.
-///
-/// # Arguments
-///
-/// * `text` - The text to display (e.g., "Task Name - 1:23:45" or "No timer running")
+/// Update the tray menu timer display text.
 #[tauri::command]
 fn update_tray_timer_display(
     text: String,
@@ -294,7 +331,6 @@ async fn send_notification_via_dbus(title: &str, body: &str) -> Result<(), Strin
         .await
         .map_err(|e| format!("D-Bus Notify call failed: {}", e))?;
 
-    // Notify returns a notification ID; deserializing verifies response integrity.
     let _notification_id: u32 = reply
         .body()
         .deserialize()
@@ -341,14 +377,6 @@ fn send_notification_with_notify_send(title: &str, body: &str) -> Result<(), Str
 }
 
 /// Send a notification on Linux via D-Bus with notify-send fallback.
-///
-/// This is a workaround for GNOME 46+ where the Tauri notification plugin
-/// doesn't work due to DBus connection lifecycle issues.
-///
-/// # Arguments
-///
-/// * `title` - Notification title
-/// * `body` - Notification body text
 #[cfg(target_os = "linux")]
 #[tauri::command]
 async fn send_notification_linux(title: String, body: String) -> Result<(), String> {
@@ -373,11 +401,10 @@ async fn send_notification_linux(title: String, body: String) -> Result<(), Stri
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
 async fn send_notification_linux(_title: String, _body: String) -> Result<(), String> {
-    // On non-Linux, this command should not be called - use the Tauri plugin instead
     Err("send_notification_linux is only available on Linux".to_string())
 }
 
-/// Get productivity stats for the stats screen.
+/// Get productivity stats for the Insights screen.
 #[tauri::command]
 async fn get_productivity_stats(
     work_start_minutes: Option<i64>,
@@ -388,13 +415,13 @@ async fn get_productivity_stats(
         .map_err(|e| e.to_string())
 }
 
-/// Get lightweight work-progress totals for the timer tab.
+/// Get lightweight work-progress totals for the Focus view.
 #[tauri::command]
 async fn get_work_progress_summary() -> Result<WorkProgressStats, String> {
     stats::get_work_progress_summary().map_err(|e| e.to_string())
 }
 
-/// Get ClickUp team leaderboard data for the stats screen.
+/// Get ClickUp team leaderboard data for the Insights screen.
 #[tauri::command]
 async fn get_clickup_team_leaderboard(
     api_key: String,
@@ -412,20 +439,19 @@ async fn get_github_pr_counts(
     github::get_pr_counts(token, username).await
 }
 
-/// Record a heartbeat from the frontend (called every 30 seconds).
-/// Tracks whether the user is currently active or idle.
+/// Record an activity heartbeat.
 #[tauri::command]
 fn record_heartbeat(is_idle: bool, duration_secs: i64) {
     stats::record_heartbeat(is_idle, duration_secs);
 }
 
-/// Record a ClickUp timer session when stopped.
+/// Record a completed ClickUp timer session.
 #[tauri::command]
 fn record_timer_session(duration_secs: i64) {
     stats::record_timer_session(duration_secs);
 }
 
-/// Record an idle event (when user exceeds idle threshold).
+/// Record an idle-threshold interruption event.
 #[tauri::command]
 fn record_idle_event(
     started_at: i64,
@@ -445,19 +471,13 @@ fn record_idle_event(
     );
 }
 
-/// Create the always-on-top widget window.
-///
-/// # Arguments
-///
-/// * `x` - Optional x position (uses default if not provided)
-/// * `y` - Optional y position (uses default if not provided)
+/// Create the always-on-top floating pill widget window.
 #[tauri::command]
 async fn create_widget_window(
     app: tauri::AppHandle,
     x: Option<i32>,
     y: Option<i32>,
 ) -> Result<(), String> {
-    // Check if widget already exists
     if app.get_webview_window("widget").is_some() {
         return Ok(());
     }
@@ -468,24 +488,21 @@ async fn create_widget_window(
         tauri::WebviewUrl::App("/widget.html".into()),
     )
     .title("Timer Widget")
-    .inner_size(120.0, 36.0)
+    .inner_size(168.0, 40.0)
     .decorations(false)
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
     .visible(true);
 
-    // Set position if provided and reasonable (within typical screen bounds)
-    // Ignore positions that are likely off-screen
     if let (Some(px), Some(py)) = (x, y) {
-        if px >= 0 && px < 5000 && py >= 0 && py < 2000 {
+        if (0..5000).contains(&px) && (0..2000).contains(&py) {
             builder = builder.position(px as f64, py as f64);
         }
     }
 
     let widget_window = builder.build().map_err(|e| e.to_string())?;
 
-    // If main window is currently visible and focused, hide the widget initially
     if let Some(main_window) = app.get_webview_window("main") {
         if main_window.is_focused().unwrap_or(false) {
             let _ = widget_window.hide();
@@ -531,10 +548,9 @@ async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     show_and_focus_main_window(&app)
 }
 
-/// Save the widget position (called from frontend when widget is moved).
+/// Save the widget position (emitted back to frontend store).
 #[tauri::command]
 async fn save_widget_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
-    // Emit event to frontend to save position in store
     app.emit("save-widget-position", (x, y))
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -549,14 +565,15 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
-            // Initialize the updater plugin (desktop only)
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
             stats::init_database();
 
-            // Start macOS sleep observer (detects lid close / display sleep)
+            // Start lightweight native OS idle sampler for accurate untracked active-time tracking.
+            tracker::start_idle_sampler();
+
             #[cfg(target_os = "macos")]
             {
                 let app_handle = app.handle().clone();
@@ -565,7 +582,6 @@ pub fn run() {
                 }
             }
 
-            // Start Linux sleep observer (detects suspend / hibernate)
             #[cfg(target_os = "linux")]
             {
                 let app_handle = app.handle().clone();
@@ -576,7 +592,6 @@ pub fn run() {
                 });
             }
 
-            // Create system tray menu items
             let timer_display = MenuItem::with_id(
                 app,
                 "timer_display",
@@ -585,12 +600,12 @@ pub fn run() {
                 None::<&str>,
             )?;
             let start_item =
-                MenuItem::with_id(app, "start_timer", "Start Timer...", true, None::<&str>)?;
-            let stop_item = MenuItem::with_id(app, "stop_timer", "Stop Timer", true, None::<&str>)?;
-            let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+                MenuItem::with_id(app, "start_timer", "Start Timer", true, None::<&str>)?;
+            let stop_item =
+                MenuItem::with_id(app, "stop_timer", "End Session...", true, None::<&str>)?;
+            let show_item = MenuItem::with_id(app, "show", "Open Window", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-            // Build menu with separators
             let menu = Menu::with_items(
                 app,
                 &[
@@ -604,24 +619,19 @@ pub fn run() {
                 ],
             )?;
 
-            // Store timer_display reference for dynamic updates
             app.manage(TrayMenuState {
                 timer_display: Mutex::new(timer_display),
             });
 
-            // Load the transparent tray icon (embedded at compile time)
             let tray_icon = include_image!("icons/tray-icon.png");
 
-            // Build the system tray
             let _tray = TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
-                        // Emit event so the frontend can stop any running timer before quitting
                         let _ = app.emit("app-quit-requested", ());
-                        // Fallback: force quit after 5 seconds in case frontend is unresponsive
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -632,44 +642,37 @@ pub fn run() {
                         let _ = show_and_focus_main_window(app);
                     }
                     "start_timer" => {
-                        let _ = show_and_focus_main_window(app);
-                        let _ = app.emit("menu-start-timer", ());
+                        let _ = app.emit("menu-quick-start", ());
                     }
                     "stop_timer" => {
+                        let _ = show_and_focus_main_window(app);
                         let _ = app.emit("menu-stop-timer", ());
                     }
                     _ => {}
                 })
                 .build(app)?;
 
-            // Handle window close - minimize to tray instead of quitting
-            // Also handle focus events for widget visibility
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
                 let app_handle = app.handle().clone();
-                window.on_window_event(move |event| {
-                    match event {
-                        tauri::WindowEvent::CloseRequested { api, .. } => {
-                            // Prevent the window from closing
-                            api.prevent_close();
-                            // Hide the window instead
-                            let _ = window_clone.hide();
-                            let _ = emit_app_visibility(&app_handle, false, false);
-                        }
-                        tauri::WindowEvent::Focused(focused) => {
-                            // Show/hide widget based on main window focus
-                            if let Some(widget) = app_handle.get_webview_window("widget") {
-                                if *focused {
-                                    let _ = widget.hide();
-                                } else {
-                                    let _ = widget.show();
-                                }
-                            }
-                            let visible = window_clone.is_visible().unwrap_or(!*focused);
-                            let _ = emit_app_visibility(&app_handle, visible, *focused);
-                        }
-                        _ => {}
+                window.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                        let _ = emit_app_visibility(&app_handle, false, false);
                     }
+                    tauri::WindowEvent::Focused(focused) => {
+                        if let Some(widget) = app_handle.get_webview_window("widget") {
+                            if *focused {
+                                let _ = widget.hide();
+                            } else {
+                                let _ = widget.show();
+                            }
+                        }
+                        let visible = window_clone.is_visible().unwrap_or(!*focused);
+                        let _ = emit_app_visibility(&app_handle, visible, *focused);
+                    }
+                    _ => {}
                 });
             }
 
@@ -683,6 +686,15 @@ pub fn run() {
             poll_runtime,
             debug_clickup_api,
             search_tasks,
+            start_quick_timer,
+            stop_and_capture_timer,
+            update_time_entry,
+            get_recent_time_entries,
+            get_today_time_entries,
+            test_clickup_connection,
+            get_active_untracked_state,
+            reset_untracked_session,
+            widget_toggle_timer,
             start_timer,
             stop_timer,
             get_time_entry_tags,

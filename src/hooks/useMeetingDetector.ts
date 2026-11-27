@@ -1,14 +1,15 @@
 /**
  * Meeting detector hook.
  *
- * Polls backend meeting presence and sends meeting start/end notifications.
+ * Polls backend meeting presence (macOS) and triggers meeting-mode notifications
+ * integrated with the centralized TimerProvider.
  */
 
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AppSettings } from "../lib/store";
-import { sendNotification } from "../lib/notification";
-import { IdleStatus } from "./useIdleChecker";
+import { sendNotification } from "@/lib/notification";
+import type { AppSettings } from "@/lib/store";
+import type { MeetingResumePayload, RunningTimerInfo } from "@/types/timer";
 
 const POLL_INTERVAL_MS = 60_000;
 const STABLE_POLLS_REQUIRED = 2;
@@ -24,78 +25,59 @@ interface MeetingPresence {
   diagnostic: string | null;
 }
 
-export interface MeetingResumeSnapshot {
-  kind: "task" | "manual";
-  task_id: string | null;
-  task_name: string | null;
-  description: string | null;
-  tags: string[];
-  billable: boolean;
-}
-
 function hasMeetingTag(tags: { name: string }[]): boolean {
   return tags.some((tag) => tag.name.toLowerCase() === MEETING_TAG_NAME);
 }
 
-function isRunningMeetingTimer(status: IdleStatus): boolean {
-  return !!status.runningTaskName && status.runningTimerIsManual && hasMeetingTag(status.runningTimerTags);
+function isRunningMeetingTimer(timer: RunningTimerInfo | null): boolean {
+  return Boolean(timer && timer.is_manual && hasMeetingTag(timer.tags));
 }
 
-function captureResumeSnapshot(status: IdleStatus): MeetingResumeSnapshot | null {
-  if (!status.runningTaskName) {
-    return null;
-  }
+function captureResumeSnapshot(
+  timer: RunningTimerInfo | null
+): MeetingResumePayload | null {
+  if (!timer) return null;
 
-  if (status.runningTimerIsManual) {
+  if (timer.is_manual) {
     return {
       kind: "manual",
       task_id: null,
-      task_name: status.runningTaskName,
-      description: status.runningTimerDescription,
-      tags: status.runningTimerTags.map((tag) => tag.name),
-      billable: status.runningTimerBillable,
+      task_name: timer.name,
+      description: timer.description,
+      tags: timer.tags.map((tag) => tag.name),
+      billable: timer.billable,
     };
   }
 
-  if (!status.runningTaskId) {
-    return null;
-  }
+  if (!timer.task_id) return null;
 
   return {
     kind: "task",
-    task_id: status.runningTaskId,
-    task_name: status.runningTaskName,
+    task_id: timer.task_id,
+    task_name: timer.name,
     description: null,
-    tags: status.runningTimerTags.map((tag) => tag.name),
-    billable: status.runningTimerBillable,
+    tags: timer.tags.map((tag) => tag.name),
+    billable: timer.billable,
   };
 }
 
-/**
- * Start polling meeting presence and drive meeting-mode notifications.
- */
 export function useMeetingDetector(
-  status: IdleStatus,
+  runningTimer: RunningTimerInfo | null,
   settings: AppSettings | null,
   isWindowVisible: boolean
 ): void {
   const intervalRef = useRef<number | null>(null);
-  const latestStatusRef = useRef<IdleStatus>(status);
+  const latestTimerRef = useRef<RunningTimerInfo | null>(runningTimer);
   const latestSettingsRef = useRef<AppSettings | null>(settings);
   const consecutiveMeetingRef = useRef(0);
   const consecutiveNotMeetingRef = useRef(0);
   const sessionActiveRef = useRef(false);
   const startPromptSentRef = useRef(false);
-  const preMeetingSnapshotRef = useRef<MeetingResumeSnapshot | null>(null);
-  const lastLoggedPresenceRef = useRef<{
-    in_meeting: boolean;
-    reason: string | null;
-    diagnostic: string | null;
-  } | null>(null);
+  const preMeetingSnapshotRef = useRef<MeetingResumePayload | null>(null);
 
   useEffect(() => {
-    latestStatusRef.current = status;
-  }, [status]);
+    latestTimerRef.current = runningTimer;
+  }, [runningTimer]);
 
   useEffect(() => {
     latestSettingsRef.current = settings;
@@ -107,7 +89,6 @@ export function useMeetingDetector(
     sessionActiveRef.current = false;
     startPromptSentRef.current = false;
     preMeetingSnapshotRef.current = null;
-    lastLoggedPresenceRef.current = null;
   }, []);
 
   const pollMeetingState = useCallback(async () => {
@@ -124,68 +105,35 @@ export function useMeetingDetector(
       }
 
       const presence = await invoke<MeetingPresence>("get_meeting_presence");
-      if (!presence.supported) {
-        return;
-      }
+      if (!presence.supported) return;
 
-      const previousPresence = lastLoggedPresenceRef.current;
-      const shouldLogPresence =
-        !previousPresence ||
-        previousPresence.in_meeting !== presence.in_meeting ||
-        previousPresence.reason !== presence.reason ||
-        previousPresence.diagnostic !== presence.diagnostic;
-      if (shouldLogPresence) {
-        console.debug("[useMeetingDetector] Presence update:", {
-          in_meeting: presence.in_meeting,
-          app_name: presence.app_name,
-          bundle_id: presence.bundle_id,
-          window_title: presence.window_title,
-          reason: presence.reason,
-          diagnostic: presence.diagnostic,
-        });
-        lastLoggedPresenceRef.current = {
-          in_meeting: presence.in_meeting,
-          reason: presence.reason,
-          diagnostic: presence.diagnostic,
-        };
-      }
-
-      const currentStatus = latestStatusRef.current;
+      const currentTimer = latestTimerRef.current;
 
       if (presence.in_meeting) {
         consecutiveMeetingRef.current += 1;
         consecutiveNotMeetingRef.current = 0;
 
         if (consecutiveMeetingRef.current >= STABLE_POLLS_REQUIRED) {
-          if (!sessionActiveRef.current) {
-            sessionActiveRef.current = true;
-          }
+          sessionActiveRef.current = true;
 
           if (!startPromptSentRef.current) {
-            if (!isRunningMeetingTimer(currentStatus)) {
-              preMeetingSnapshotRef.current = captureResumeSnapshot(currentStatus);
+            if (!isRunningMeetingTimer(currentTimer)) {
+              preMeetingSnapshotRef.current = captureResumeSnapshot(currentTimer);
 
-              // Best effort: ensure "meeting" tag exists before modal start flow.
               await invoke("ensure_meeting_tag", {
                 apiKey: currentSettings.clickupApiKey,
                 teamId: currentSettings.clickupTeamId,
-              }).catch((error) => {
-                console.debug("[useMeetingDetector] Failed to ensure meeting tag:", error);
-              });
+              }).catch(() => {});
 
               await sendNotification({
                 title: "Meeting Detected",
-                body: "Would you like to switch the timer to a meeting?",
-                extra: {
-                  intent: "meeting-start",
-                },
+                body: "Click to switch your timer to a meeting in 1 click.",
+                extra: { intent: "meeting-start" },
               });
             }
-
             startPromptSentRef.current = true;
           }
         }
-
         return;
       }
 
@@ -196,24 +144,22 @@ export function useMeetingDetector(
         sessionActiveRef.current &&
         consecutiveNotMeetingRef.current >= STABLE_POLLS_REQUIRED
       ) {
-        if (isRunningMeetingTimer(currentStatus) && preMeetingSnapshotRef.current) {
+        if (isRunningMeetingTimer(currentTimer) && preMeetingSnapshotRef.current) {
           await sendNotification({
             title: "Meeting Ended",
-            body: "Hey, do you want to go back to your previous task?",
+            body: "Click to resume your previous task.",
             extra: {
               intent: "meeting-resume",
               resume_payload: preMeetingSnapshotRef.current,
             },
           });
         }
-
-        // End this meeting session and reset one-shot state.
         sessionActiveRef.current = false;
         startPromptSentRef.current = false;
         preMeetingSnapshotRef.current = null;
       }
-    } catch (error) {
-      console.debug("[useMeetingDetector] Poll failed:", error);
+    } catch (err) {
+      console.debug("[useMeetingDetector] Poll failed:", err);
     }
   }, [isWindowVisible, resetState]);
 
@@ -226,7 +172,7 @@ export function useMeetingDetector(
       return;
     }
 
-    pollMeetingState();
+    void pollMeetingState();
     intervalRef.current = window.setInterval(pollMeetingState, POLL_INTERVAL_MS);
 
     return () => {

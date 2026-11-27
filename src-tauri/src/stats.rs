@@ -1,21 +1,24 @@
 //! Statistics tracking and gamification module.
 //!
-//! Tracks user activity time (active vs idle) and ClickUp timer sessions.
-//! Uses a heartbeat system for accurate time tracking.
+//! Tracks user activity time (active vs idle) and ClickUp timer sessions using
+//! a single persistent WAL-mode SQLite connection (capped at 1 MB cache) and
+//! an in-memory cache for pending backdates to keep idle CPU & RAM minimal.
+
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 
 use chrono::{Datelike, NaiveDate};
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::OnceLock;
 
-/// Database retention period in days
+/// Database retention period in days.
 const DB_RETENTION_DAYS: i64 = 90;
 const DEFAULT_WORK_DAYS: [usize; 5] = [0, 1, 2, 3, 4];
 /// Defensive cap for a single recorded ClickUp session.
 const MAX_SESSION_DURATION_SECS: i64 = 24 * 60 * 60;
 
-/// Daily activity record
+/// Daily activity record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyActivity {
     pub date: String,
@@ -25,7 +28,7 @@ pub struct DailyActivity {
     pub session_seconds: i64,
 }
 
-/// Idle event record
+/// Idle event record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdleEvent {
     pub id: i64,
@@ -37,47 +40,42 @@ pub struct IdleEvent {
     pub session_duration_secs: i64,
 }
 
-/// Complete productivity stats returned to frontend
+/// Complete productivity stats returned to frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductivityStats {
-    // Today's activity
     pub active_seconds_today: i64,
     pub idle_seconds_today: i64,
-
-    // Streaks (consecutive days with any app activity)
     pub current_streak: i64,
     pub best_streak: i64,
-
-    // XP/Level (based on real active time)
     pub current_xp: i64,
     pub current_level: i64,
     pub xp_for_next_level: i64,
     pub xp_progress_percent: f64,
-
-    // ClickUp sessions
     pub sessions_today: i64,
     pub sessions_week: i64,
     pub session_seconds_today: i64,
     pub session_seconds_week: i64,
     pub avg_session_minutes: f64,
-
-    // Weekly comparison
     pub active_seconds_week: i64,
     pub active_seconds_last_week: i64,
     pub week_delta_seconds: i64,
-
-    // Charts
     pub last_7_days: Vec<DailyActivity>,
-
-    // Events
     pub recent_events: Vec<IdleEvent>,
 }
 
-/// Lightweight work-progress totals for the timer tab.
+/// Lightweight work-progress totals for the Focus view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkProgressStats {
     pub session_seconds_today: i64,
     pub session_seconds_week: i64,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct DayRow {
+    active_seconds: i64,
+    idle_seconds: i64,
+    session_count: i64,
+    session_seconds: i64,
 }
 
 fn sanitize_session_duration_secs(duration_secs: i64) -> Option<i64> {
@@ -104,9 +102,18 @@ fn get_db_path() -> PathBuf {
     path
 }
 
-fn open_connection() -> Result<Connection> {
+fn open_and_configure_connection() -> Result<Connection> {
     let path = get_db_path();
-    Connection::open(path)
+    let conn = Connection::open(path)?;
+    // Cap SQLite memory cache at 1 MB and enable WAL for low-overhead heartbeats.
+    let _ = conn.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA cache_size = -1000;
+         PRAGMA temp_store = MEMORY;
+         PRAGMA busy_timeout = 3000;",
+    );
+    Ok(conn)
 }
 
 fn initialize_schema(conn: &Connection) -> Result<()> {
@@ -121,7 +128,6 @@ fn initialize_schema(conn: &Connection) -> Result<()> {
         (),
     )?;
 
-    // Updated idle_events table with session_duration_secs
     conn.execute(
         "CREATE TABLE IF NOT EXISTS idle_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,7 +141,6 @@ fn initialize_schema(conn: &Connection) -> Result<()> {
         (),
     )?;
 
-    // Heartbeat event log used for work-hours-aware stats aggregation
     conn.execute(
         "CREATE TABLE IF NOT EXISTS activity_heartbeats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,7 +151,16 @@ fn initialize_schema(conn: &Connection) -> Result<()> {
         (),
     )?;
 
-    // Migration: Add session_duration_secs column if it doesn't exist (for existing databases)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pending_backdates (
+            timer_id TEXT PRIMARY KEY,
+            team_id TEXT NOT NULL,
+            backdate_start_ms INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )",
+        (),
+    )?;
+
     let _ = conn.execute(
         "ALTER TABLE idle_events ADD COLUMN session_duration_secs INTEGER DEFAULT 0",
         (),
@@ -168,36 +182,77 @@ fn initialize_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn ensure_schema_initialized() -> Result<()> {
-    static SCHEMA_READY: OnceLock<()> = OnceLock::new();
-    if SCHEMA_READY.get().is_some() {
-        return Ok(());
+/// Run a closure against the single persistent SQLite connection.
+fn with_connection<T>(f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+    static DB: OnceLock<Mutex<Option<Connection>>> = OnceLock::new();
+    let slot = DB.get_or_init(|| Mutex::new(None));
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+
+    if guard.is_none() {
+        let conn = open_and_configure_connection()?;
+        initialize_schema(&conn)?;
+        *guard = Some(conn);
     }
 
-    let conn = open_connection()?;
-    initialize_schema(&conn)?;
-    let _ = SCHEMA_READY.get_or_init(|| ());
-    Ok(())
+    f(guard.as_ref().expect("SQLite connection initialized"))
 }
 
-fn get_connection() -> Result<Connection> {
-    ensure_schema_initialized()?;
-    open_connection()
+/// In-memory cache of `pending_backdates` so runtime polls never hit SQLite.
+struct PendingBackdateCache {
+    hydrated: bool,
+    entries: HashMap<String, (String, i64)>,
+}
+
+fn pending_backdate_cache() -> &'static Mutex<PendingBackdateCache> {
+    static CACHE: OnceLock<Mutex<PendingBackdateCache>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        Mutex::new(PendingBackdateCache {
+            hydrated: false,
+            entries: HashMap::new(),
+        })
+    })
+}
+
+fn ensure_backdate_cache_hydrated(cache: &mut PendingBackdateCache) {
+    if cache.hydrated {
+        return;
+    }
+    cache.hydrated = true;
+
+    let loaded = with_connection(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT timer_id, team_id, backdate_start_ms FROM pending_backdates",
+        )?;
+        let rows = stmt
+            .query_map((), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect::<Vec<_>>();
+        Ok(rows)
+    });
+
+    if let Ok(rows) = loaded {
+        for (timer_id, team_id, backdate_start_ms) in rows {
+            cache.entries.insert(timer_id, (team_id, backdate_start_ms));
+        }
+    }
 }
 
 /// Initialize the database (called at app startup).
-/// Drops old tables to reset stats with new schema.
 pub fn init_database() {
-    if let Ok(conn) = open_connection() {
-        // Drop old tables if they exist (full reset)
+    let _ = with_connection(|conn| {
         let _ = conn.execute("DROP TABLE IF EXISTS daily_stats", ());
+        cleanup_old_data(conn);
+        Ok(())
+    });
 
-        // Ensure new schema is created once up front instead of on every write.
-        let _ = initialize_schema(&conn);
-        let _ = ensure_schema_initialized();
-
-        // Clean up old data
-        cleanup_old_data(&conn);
+    if let Ok(mut cache) = pending_backdate_cache().lock() {
+        ensure_backdate_cache_hydrated(&mut cache);
     }
 }
 
@@ -217,71 +272,123 @@ fn cleanup_old_data(conn: &Connection) {
         "DELETE FROM activity_heartbeats WHERE recorded_at < ?",
         (cutoff,),
     );
+    let stale_backdate_cutoff = chrono::Utc::now()
+        .checked_sub_signed(chrono::Duration::hours(48))
+        .map(|dt| dt.timestamp())
+        .unwrap_or(0);
+    let _ = conn.execute(
+        "DELETE FROM pending_backdates WHERE created_at < ?",
+        (stale_backdate_cutoff,),
+    );
 }
 
-/// Record a heartbeat from the frontend.
-/// Called on each runtime scheduler tick with the current idle status and tick duration.
+/// Persist a pending backdate start timestamp for a running ClickUp time entry.
+pub fn save_pending_backdate(timer_id: &str, team_id: &str, backdate_start_ms: i64) {
+    if let Ok(mut cache) = pending_backdate_cache().lock() {
+        ensure_backdate_cache_hydrated(&mut cache);
+        cache
+            .entries
+            .insert(timer_id.to_string(), (team_id.to_string(), backdate_start_ms));
+    }
+
+    let _ = with_connection(|conn| {
+        let now_ts = chrono::Utc::now().timestamp();
+        conn.execute(
+            "INSERT INTO pending_backdates (timer_id, team_id, backdate_start_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(timer_id) DO UPDATE SET
+                team_id = excluded.team_id,
+                backdate_start_ms = excluded.backdate_start_ms,
+                created_at = excluded.created_at",
+            params![timer_id, team_id, backdate_start_ms, now_ts],
+        )?;
+        Ok(())
+    });
+}
+
+/// Look up a pending backdate start timestamp (zero SQLite overhead via in-memory mirror).
+pub fn get_pending_backdate(timer_id: &str, team_id: &str) -> Option<i64> {
+    let mut cache = pending_backdate_cache().lock().ok()?;
+    ensure_backdate_cache_hydrated(&mut cache);
+    cache
+        .entries
+        .get(timer_id)
+        .filter(|(stored_team, _)| stored_team == team_id)
+        .map(|(_, start_ms)| *start_ms)
+}
+
+/// Remove a pending backdate once applied or discarded.
+pub fn clear_pending_backdate(timer_id: &str) {
+    if let Ok(mut cache) = pending_backdate_cache().lock() {
+        cache.entries.remove(timer_id);
+    }
+
+    let _ = with_connection(|conn| {
+        conn.execute(
+            "DELETE FROM pending_backdates WHERE timer_id = ?1",
+            params![timer_id],
+        )?;
+        Ok(())
+    });
+}
+
+/// Record a heartbeat from the runtime scheduler.
 pub fn record_heartbeat(is_idle: bool, duration_secs: i64) {
     if duration_secs <= 0 {
         return;
     }
 
-    if let Ok(conn) = get_connection() {
-        let now_ts = chrono::Local::now().timestamp();
-        let today = chrono::Local::now().date_naive().to_string();
+    let _ = with_connection(|conn| {
+        let now = chrono::Local::now();
+        let now_ts = now.timestamp();
+        let today = now.date_naive().to_string();
 
-        // Ensure the day exists
-        let _ = conn.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO activity_days (date) VALUES (?)",
             (&today,),
-        );
+        )?;
 
-        // Keep heartbeat timestamps so stats can filter by work hours.
-        let _ = conn.execute(
+        conn.execute(
             "INSERT INTO activity_heartbeats (recorded_at, is_idle, duration_secs) VALUES (?, ?, ?)",
             (now_ts, is_idle, duration_secs),
-        );
+        )?;
 
-        // Add the observed tick duration to the appropriate daily bucket.
         if is_idle {
-            let _ = conn.execute(
+            conn.execute(
                 "UPDATE activity_days SET idle_seconds = idle_seconds + ? WHERE date = ?",
                 (duration_secs, &today),
-            );
+            )?;
         } else {
-            let _ = conn.execute(
+            conn.execute(
                 "UPDATE activity_days SET active_seconds = active_seconds + ? WHERE date = ?",
                 (duration_secs, &today),
-            );
+            )?;
         }
-    }
+        Ok(())
+    });
 }
 
 /// Record a ClickUp timer session when stopped.
-/// Called when a timer is stopped (either manually or due to idle).
 pub fn record_timer_session(duration_secs: i64) {
     let Some(duration_secs) = sanitize_session_duration_secs(duration_secs) else {
         return;
     };
 
-    if let Ok(conn) = get_connection() {
+    let _ = with_connection(|conn| {
         let today = chrono::Local::now().date_naive().to_string();
-
-        // Ensure the day exists
-        let _ = conn.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO activity_days (date) VALUES (?)",
             (&today,),
-        );
-
-        // Add session to today's stats
-        let _ = conn.execute(
-            "UPDATE activity_days SET 
+        )?;
+        conn.execute(
+            "UPDATE activity_days SET
                 session_count = session_count + 1,
                 session_seconds = session_seconds + ?
              WHERE date = ?",
             (duration_secs, &today),
-        );
-    }
+        )?;
+        Ok(())
+    });
 }
 
 /// Record an idle event (when user exceeds idle threshold).
@@ -293,11 +400,11 @@ pub fn record_idle_event(
     task_id: Option<String>,
     session_duration_secs: i64,
 ) {
-    if let Ok(conn) = get_connection() {
-        let safe_session_duration_secs = sanitize_session_duration_secs(session_duration_secs)
-            .unwrap_or_default();
+    let _ = with_connection(|conn| {
+        let safe_session_duration_secs =
+            sanitize_session_duration_secs(session_duration_secs).unwrap_or_default();
 
-        let _ = conn.execute(
+        conn.execute(
             "INSERT INTO idle_events (started_at, duration_secs, timer_stopped, task_name, task_id, session_duration_secs)
              VALUES (?, ?, ?, ?, ?, ?)",
             (
@@ -308,10 +415,11 @@ pub fn record_idle_event(
                 task_id.as_deref(),
                 safe_session_duration_secs,
             ),
-        );
+        )?;
 
-        cleanup_old_data(&conn);
-    }
+        cleanup_old_data(conn);
+        Ok(())
+    });
 }
 
 /// Calculate XP level from total XP (1 XP per active minute).
@@ -375,136 +483,43 @@ fn build_work_hours_condition_sql(work_start_minutes: i64, work_end_minutes: i64
     }
 }
 
-fn get_day_activity_for_work_hours(
-    conn: &Connection,
-    date: &str,
-    work_start_minutes: i64,
-    work_end_minutes: i64,
+/// Resolve active/idle seconds for a single date using pre-loaded grouped maps.
+fn resolve_day_activity(
+    date: NaiveDate,
+    date_str: &str,
+    heartbeats_by_date: &HashMap<String, (i64, i64)>,
+    days_by_date: &HashMap<String, DayRow>,
     work_days: &[bool; 7],
-) -> Result<(i64, i64)> {
-    if let Ok(parsed_date) = NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-        if !is_work_day(parsed_date, work_days) {
-            return Ok((0, 0));
-        }
+) -> (i64, i64) {
+    if !is_work_day(date, work_days) {
+        return (0, 0);
     }
 
-    let work_hours_condition = build_work_hours_condition_sql(work_start_minutes, work_end_minutes);
-    let sql = format!(
-        "SELECT
-            COUNT(*),
-            COALESCE(SUM(CASE WHEN is_idle = 0 AND ({work_hours_condition}) THEN duration_secs ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN is_idle = 1 AND ({work_hours_condition}) THEN duration_secs ELSE 0 END), 0)
-         FROM activity_heartbeats
-         WHERE date(datetime(recorded_at, 'unixepoch', 'localtime')) = ?1"
-    );
-
-    let (heartbeat_count, filtered_active, filtered_idle): (i64, i64, i64) =
-        conn.query_row(&sql, params![date], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
-
-    if heartbeat_count > 0 {
-        return Ok((filtered_active, filtered_idle));
+    if let Some(&(active, idle)) = heartbeats_by_date.get(date_str) {
+        return (active, idle);
     }
 
-    let fallback = conn
-        .query_row(
-            "SELECT COALESCE(active_seconds, 0), COALESCE(idle_seconds, 0)
-             FROM activity_days WHERE date = ?",
-            (date,),
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap_or((0, 0));
-
-    Ok(fallback)
+    days_by_date
+        .get(date_str)
+        .map(|row| (row.active_seconds, row.idle_seconds))
+        .unwrap_or((0, 0))
 }
 
-fn get_active_for_range(
-    conn: &Connection,
-    start_date: NaiveDate,
-    end_date: NaiveDate,
-    work_start_minutes: i64,
-    work_end_minutes: i64,
-    work_days: &[bool; 7],
-) -> Result<i64> {
-    if start_date > end_date {
-        return Ok(0);
-    }
-
-    let mut total_active = 0;
-    let mut cursor = start_date;
-
-    while cursor <= end_date {
-        let (active, _) = get_day_activity_for_work_hours(
-            conn,
-            &cursor.to_string(),
-            work_start_minutes,
-            work_end_minutes,
-            work_days,
-        )?;
-        total_active += active;
-
-        let Some(next_day) = cursor.checked_add_signed(chrono::Duration::days(1)) else {
-            break;
-        };
-        cursor = next_day;
-    }
-
-    Ok(total_active)
-}
-
-fn get_total_active_seconds_for_work_hours(
-    conn: &Connection,
-    work_start_minutes: i64,
-    work_end_minutes: i64,
-    work_days: &[bool; 7],
-) -> Result<i64> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT date
-         FROM (
-            SELECT date AS date FROM activity_days
-            UNION ALL
-            SELECT date(datetime(recorded_at, 'unixepoch', 'localtime')) AS date FROM activity_heartbeats
-         )
-         WHERE date IS NOT NULL
-         ORDER BY date",
-    )?;
-
-    let dates: Vec<String> = stmt
-        .query_map((), |row| row.get(0))?
-        .filter_map(|d| d.ok())
-        .collect();
-
-    let mut total_active = 0;
-    for date in dates {
-        let (active, _) = get_day_activity_for_work_hours(
-            conn,
-            &date,
-            work_start_minutes,
-            work_end_minutes,
-            work_days,
-        )?;
-        total_active += active;
-    }
-
-    Ok(total_active)
-}
-
-/// Calculate current and best streaks.
-/// A streak is consecutive days with any app activity or tracked session.
-fn calculate_streaks(conn: &Connection, today: NaiveDate) -> Result<(i64, i64)> {
-    let mut stmt = conn.prepare(
-        "SELECT date FROM activity_days
-         WHERE active_seconds > 0 OR session_count > 0
-         ORDER BY date DESC",
-    )?;
-
-    let dates: Vec<String> = stmt
-        .query_map((), |row| row.get(0))?
-        .filter_map(|e| e.ok())
+fn calculate_streaks_from_days(
+    days_by_date: &HashMap<String, DayRow>,
+    today: NaiveDate,
+) -> (i64, i64) {
+    let mut dates: Vec<NaiveDate> = days_by_date
+        .iter()
+        .filter(|(_, row)| row.active_seconds > 0 || row.session_count > 0)
+        .filter_map(|(date_str, _)| NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok())
         .collect();
 
     if dates.is_empty() {
-        return Ok((0, 0));
+        return (0, 0);
     }
+
+    dates.sort_unstable_by(|a, b| b.cmp(a));
 
     let mut current_streak: i64 = 0;
     let mut best_streak: i64 = 0;
@@ -512,36 +527,26 @@ fn calculate_streaks(conn: &Connection, today: NaiveDate) -> Result<(i64, i64)> 
     let mut previous_date: Option<NaiveDate> = None;
     let mut is_current_streak_active = false;
 
-    for date_str in &dates {
-        if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-            if let Some(prev) = previous_date {
-                let diff = (prev - date).num_days();
-                if diff == 1 {
-                    // Consecutive day
-                    temp_streak += 1;
-                } else {
-                    // Gap in streak
-                    best_streak = best_streak.max(temp_streak);
-                    if is_current_streak_active {
-                        current_streak = temp_streak;
-                        is_current_streak_active = false;
-                    }
-                    temp_streak = 1;
-                }
+    for date in dates {
+        if let Some(prev) = previous_date {
+            if (prev - date).num_days() == 1 {
+                temp_streak += 1;
             } else {
-                // First date (most recent)
-                let days_since_today = (today - date).num_days();
-                if days_since_today <= 1 {
-                    // Today or yesterday - streak is active
-                    temp_streak = 1;
-                    is_current_streak_active = true;
-                } else {
-                    // Last activity was more than 1 day ago - no current streak
-                    temp_streak = 1;
+                best_streak = best_streak.max(temp_streak);
+                if is_current_streak_active {
+                    current_streak = temp_streak;
+                    is_current_streak_active = false;
                 }
+                temp_streak = 1;
             }
-            previous_date = Some(date);
+        } else {
+            let days_since_today = (today - date).num_days();
+            temp_streak = 1;
+            if days_since_today <= 1 {
+                is_current_streak_active = true;
+            }
         }
+        previous_date = Some(date);
     }
 
     best_streak = best_streak.max(temp_streak);
@@ -549,23 +554,16 @@ fn calculate_streaks(conn: &Connection, today: NaiveDate) -> Result<(i64, i64)> 
         current_streak = temp_streak;
     }
 
-    Ok((current_streak, best_streak))
+    (current_streak, best_streak)
 }
 
-/// Get complete productivity stats.
-pub fn get_productivity_stats(
-    work_start_minutes: Option<i64>,
-    work_end_minutes: Option<i64>,
-    work_days: Option<Vec<i64>>,
+fn compute_productivity_stats_from_conn(
+    conn: &Connection,
+    today: NaiveDate,
+    work_start_minutes: i64,
+    work_end_minutes: i64,
+    work_days: &[bool; 7],
 ) -> Result<ProductivityStats> {
-    let conn = get_connection()?;
-    let now = chrono::Local::now();
-    let today = now.date_naive();
-    let work_start_minutes = clamp_work_minutes(work_start_minutes, 8 * 60);
-    let work_end_minutes = clamp_work_minutes(work_end_minutes, 17 * 60);
-    let work_days = normalize_work_days(work_days);
-
-    // Calculate week boundaries (Monday to Sunday)
     let days_since_monday = today.weekday().num_days_from_monday() as i64;
     let week_start = today
         .checked_sub_signed(chrono::Duration::days(days_since_monday))
@@ -577,64 +575,141 @@ pub fn get_productivity_stats(
         .checked_sub_signed(chrono::Duration::days(1))
         .unwrap_or(week_start);
 
-    // Today's activity (work-hours-aware active/idle + session stats)
-    let (active_today, idle_today) = get_day_activity_for_work_hours(
-        &conn,
-        &today.to_string(),
-        work_start_minutes,
-        work_end_minutes,
-        &work_days,
-    )?;
-    let (sessions_today, session_seconds_today): (i64, i64) = conn
-        .query_row(
-            "SELECT
-                COALESCE(session_count, 0),
-                COALESCE(session_seconds, 0)
-             FROM activity_days WHERE date = ?",
-            (today.to_string(),),
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap_or((0, 0));
+    // Query 1: Single grouped aggregation across all heartbeat rows (replaces ~110 per-day queries).
+    let work_hours_condition = build_work_hours_condition_sql(work_start_minutes, work_end_minutes);
+    let hb_sql = format!(
+        "SELECT
+            date(datetime(recorded_at, 'unixepoch', 'localtime')) AS d,
+            COALESCE(SUM(CASE WHEN is_idle = 0 AND ({work_hours_condition}) THEN duration_secs ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN is_idle = 1 AND ({work_hours_condition}) THEN duration_secs ELSE 0 END), 0)
+         FROM activity_heartbeats
+         GROUP BY d"
+    );
 
-    // This week's session totals (work-hours do not alter ClickUp session durations/counts)
-    let (sessions_week, session_seconds_week): (i64, i64) = conn
-        .query_row(
-            "SELECT
-                COALESCE(SUM(session_count), 0),
-                COALESCE(SUM(session_seconds), 0)
-             FROM activity_days
-             WHERE date BETWEEN ? AND ?",
-            (week_start.to_string(), today.to_string()),
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap_or((0, 0));
+    let mut heartbeats_by_date: HashMap<String, (i64, i64)> = HashMap::new();
+    {
+        let mut stmt = conn.prepare(&hb_sql)?;
+        let rows = stmt.query_map((), |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in rows.flatten() {
+            if let Some(date) = row.0 {
+                heartbeats_by_date.insert(date, (row.1, row.2));
+            }
+        }
+    }
 
-    // Work-hours-aware weekly active totals
-    let active_week = get_active_for_range(
-        &conn,
-        week_start,
+    // Query 2: All daily summary rows (at most ~90 rows due to retention window).
+    let mut days_by_date: HashMap<String, DayRow> = HashMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT date, COALESCE(active_seconds, 0), COALESCE(idle_seconds, 0),
+                    COALESCE(session_count, 0), COALESCE(session_seconds, 0)
+             FROM activity_days",
+        )?;
+        let rows = stmt.query_map((), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                DayRow {
+                    active_seconds: row.get(1)?,
+                    idle_seconds: row.get(2)?,
+                    session_count: row.get(3)?,
+                    session_seconds: row.get(4)?,
+                },
+            ))
+        })?;
+        for (date, day_row) in rows.flatten() {
+            days_by_date.insert(date, day_row);
+        }
+    }
+
+    // Query 3: Recent 10 idle events.
+    let recent_events: Vec<IdleEvent> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, started_at, duration_secs, timer_stopped, task_name, task_id, session_duration_secs
+             FROM idle_events ORDER BY started_at DESC LIMIT 10",
+        )?;
+        let events = stmt
+            .query_map((), |row| {
+                Ok(IdleEvent {
+                    id: row.get(0)?,
+                    started_at: row.get(1)?,
+                    duration_secs: row.get(2)?,
+                    timer_stopped: row.get(3)?,
+                    task_name: row.get(4)?,
+                    task_id: row.get(5)?,
+                    session_duration_secs: row.get(6).unwrap_or(0),
+                })
+            })?
+            .filter_map(|e| e.ok())
+            .collect();
+        events
+    };
+
+    // In-memory aggregation from the 2 small maps.
+    let today_str = today.to_string();
+    let (active_today, idle_today) = resolve_day_activity(
         today,
-        work_start_minutes,
-        work_end_minutes,
-        &work_days,
-    )?;
-    let active_last_week = get_active_for_range(
-        &conn,
-        last_week_start,
-        last_week_end,
-        work_start_minutes,
-        work_end_minutes,
-        &work_days,
-    )?;
+        &today_str,
+        &heartbeats_by_date,
+        &days_by_date,
+        work_days,
+    );
 
-    // Average session duration (across all time)
-    let (total_sessions, total_session_seconds): (i64, i64) = conn
-        .query_row(
-            "SELECT COALESCE(SUM(session_count), 0), COALESCE(SUM(session_seconds), 0) FROM activity_days",
-            (),
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap_or((0, 0));
+    let today_day_row = days_by_date.get(&today_str).copied().unwrap_or_default();
+    let sessions_today = today_day_row.session_count;
+    let session_seconds_today = today_day_row.session_seconds;
+
+    let mut sessions_week: i64 = 0;
+    let mut session_seconds_week: i64 = 0;
+    let mut total_sessions: i64 = 0;
+    let mut total_session_seconds: i64 = 0;
+
+    for (date_str, row) in &days_by_date {
+        total_sessions += row.session_count;
+        total_session_seconds += row.session_seconds;
+        if let Ok(parsed) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+            if parsed >= week_start && parsed <= today {
+                sessions_week += row.session_count;
+                session_seconds_week += row.session_seconds;
+            }
+        }
+    }
+
+    let mut all_dates: HashSet<&str> = HashSet::new();
+    for date in heartbeats_by_date.keys() {
+        all_dates.insert(date.as_str());
+    }
+    for date in days_by_date.keys() {
+        all_dates.insert(date.as_str());
+    }
+
+    let mut total_active_seconds: i64 = 0;
+    let mut active_week: i64 = 0;
+    let mut active_last_week: i64 = 0;
+
+    for date_str in all_dates {
+        let Ok(parsed) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else {
+            continue;
+        };
+        let (day_active, _) = resolve_day_activity(
+            parsed,
+            date_str,
+            &heartbeats_by_date,
+            &days_by_date,
+            work_days,
+        );
+        total_active_seconds += day_active;
+        if parsed >= week_start && parsed <= today {
+            active_week += day_active;
+        } else if parsed >= last_week_start && parsed <= last_week_end {
+            active_last_week += day_active;
+        }
+    }
 
     let avg_session_minutes = if total_sessions > 0 {
         (total_session_seconds as f64 / total_sessions as f64) / 60.0
@@ -642,15 +717,7 @@ pub fn get_productivity_stats(
         0.0
     };
 
-    // XP = total active minutes across all time (work-hours-aware)
-    let total_active_seconds = get_total_active_seconds_for_work_hours(
-        &conn,
-        work_start_minutes,
-        work_end_minutes,
-        &work_days,
-    )?;
-
-    let total_xp = total_active_seconds / 60; // 1 XP per active minute
+    let total_xp = total_active_seconds / 60;
     let current_level = calculate_level(total_xp);
     let xp_for_next = xp_for_level(current_level + 1);
     let xp_for_current = xp_for_level(current_level);
@@ -662,63 +729,30 @@ pub fn get_productivity_stats(
         100.0
     };
 
-    // Streaks
-    let (current_streak, best_streak) = calculate_streaks(&conn, today)?;
+    let (current_streak, best_streak) = calculate_streaks_from_days(&days_by_date, today);
 
-    // Last 7 days of activity (fill in missing days with zeros)
-    let mut last_7_days: Vec<DailyActivity> = Vec::new();
+    let mut last_7_days = Vec::with_capacity(7);
     for i in (0..7).rev() {
         let date = today
             .checked_sub_signed(chrono::Duration::days(i))
             .unwrap_or(today);
         let date_str = date.to_string();
-
-        let (day_active, day_idle) = get_day_activity_for_work_hours(
-            &conn,
+        let (day_active, day_idle) = resolve_day_activity(
+            date,
             &date_str,
-            work_start_minutes,
-            work_end_minutes,
-            &work_days,
-        )?;
-        let (session_count, session_seconds): (i64, i64) = conn
-            .query_row(
-                "SELECT COALESCE(session_count, 0), COALESCE(session_seconds, 0)
-                 FROM activity_days WHERE date = ?",
-                (&date_str,),
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap_or((0, 0));
-
-        let day = DailyActivity {
+            &heartbeats_by_date,
+            &days_by_date,
+            work_days,
+        );
+        let day_row = days_by_date.get(&date_str).copied().unwrap_or_default();
+        last_7_days.push(DailyActivity {
             date: date_str,
             active_seconds: day_active,
             idle_seconds: day_idle,
-            session_count,
-            session_seconds,
-        };
-
-        last_7_days.push(day);
+            session_count: day_row.session_count,
+            session_seconds: day_row.session_seconds,
+        });
     }
-
-    // Recent idle events
-    let recent_events: Vec<IdleEvent> = conn
-        .prepare(
-            "SELECT id, started_at, duration_secs, timer_stopped, task_name, task_id, session_duration_secs
-             FROM idle_events ORDER BY started_at DESC LIMIT 10",
-        )?
-        .query_map((), |row| {
-            Ok(IdleEvent {
-                id: row.get(0)?,
-                started_at: row.get(1)?,
-                duration_secs: row.get(2)?,
-                timer_stopped: row.get(3)?,
-                task_name: row.get(4)?,
-                task_id: row.get(5)?,
-                session_duration_secs: row.get(6).unwrap_or(0),
-            })
-        })?
-        .filter_map(|e| e.ok())
-        .collect();
 
     Ok(ProductivityStats {
         active_seconds_today: active_today,
@@ -742,17 +776,38 @@ pub fn get_productivity_stats(
     })
 }
 
-/// Get lightweight timer-tab work progress totals without the heavier stats aggregation.
+/// Get complete productivity stats.
+pub fn get_productivity_stats(
+    work_start_minutes: Option<i64>,
+    work_end_minutes: Option<i64>,
+    work_days: Option<Vec<i64>>,
+) -> Result<ProductivityStats> {
+    let today = chrono::Local::now().date_naive();
+    let work_start_minutes = clamp_work_minutes(work_start_minutes, 8 * 60);
+    let work_end_minutes = clamp_work_minutes(work_end_minutes, 17 * 60);
+    let work_days = normalize_work_days(work_days);
+
+    with_connection(|conn| {
+        compute_productivity_stats_from_conn(
+            conn,
+            today,
+            work_start_minutes,
+            work_end_minutes,
+            &work_days,
+        )
+    })
+}
+
+/// Get lightweight Focus-view work progress totals without heavier stats aggregation.
 pub fn get_work_progress_summary() -> Result<WorkProgressStats> {
-    let conn = get_connection()?;
     let today = chrono::Local::now().date_naive();
     let days_since_monday = today.weekday().num_days_from_monday() as i64;
     let week_start = today
         .checked_sub_signed(chrono::Duration::days(days_since_monday))
         .unwrap_or(today);
 
-    let (session_seconds_today, session_seconds_week): (i64, i64) = conn
-        .query_row(
+    with_connection(|conn| {
+        let (session_seconds_today, session_seconds_week): (i64, i64) = conn.query_row(
             "SELECT
                 COALESCE((SELECT session_seconds FROM activity_days WHERE date = ?1), 0),
                 COALESCE((SELECT SUM(session_seconds) FROM activity_days WHERE date BETWEEN ?2 AND ?1), 0)",
@@ -760,9 +815,10 @@ pub fn get_work_progress_summary() -> Result<WorkProgressStats> {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
 
-    Ok(WorkProgressStats {
-        session_seconds_today,
-        session_seconds_week,
+        Ok(WorkProgressStats {
+            session_seconds_today,
+            session_seconds_week,
+        })
     })
 }
 
@@ -800,5 +856,76 @@ mod tests {
             sanitize_session_duration_secs(MAX_SESSION_DURATION_SECS + 1),
             None
         );
+    }
+
+    #[test]
+    fn test_pending_backdates_schema_roundtrip() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO pending_backdates (timer_id, team_id, backdate_start_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params!["entry_1", "team_1", 1_700_000_000_000_i64, 1_700_000_100_i64],
+        )
+        .unwrap();
+
+        let fetched: i64 = conn
+            .query_row(
+                "SELECT backdate_start_ms FROM pending_backdates WHERE timer_id = ?1 AND team_id = ?2",
+                params!["entry_1", "team_1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(fetched, 1_700_000_000_000_i64);
+
+        conn.execute(
+            "DELETE FROM pending_backdates WHERE timer_id = ?1",
+            params!["entry_1"],
+        )
+        .unwrap();
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pending_backdates", (), |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn test_grouped_productivity_stats_aggregates_accurately() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        let wednesday = NaiveDate::from_ymd_opt(2026, 11, 25).unwrap();
+        let tuesday = NaiveDate::from_ymd_opt(2026, 11, 24).unwrap();
+        let last_monday = NaiveDate::from_ymd_opt(2026, 11, 16).unwrap();
+
+        conn.execute(
+            "INSERT INTO activity_days (date, active_seconds, idle_seconds, session_count, session_seconds)
+             VALUES (?1, 3600, 600, 2, 3000), (?2, 7200, 300, 3, 5400), (?3, 1800, 0, 1, 1200)",
+            params![
+                wednesday.to_string(),
+                tuesday.to_string(),
+                last_monday.to_string()
+            ],
+        )
+        .unwrap();
+
+        let work_days = normalize_work_days(None);
+        let stats = compute_productivity_stats_from_conn(&conn, wednesday, 8 * 60, 17 * 60, &work_days)
+            .unwrap();
+
+        assert_eq!(stats.active_seconds_today, 3600);
+        assert_eq!(stats.idle_seconds_today, 600);
+        assert_eq!(stats.sessions_today, 2);
+        assert_eq!(stats.sessions_week, 5);
+        assert_eq!(stats.session_seconds_week, 8400);
+        assert_eq!(stats.active_seconds_week, 10800);
+        assert_eq!(stats.active_seconds_last_week, 1800);
+        assert_eq!(stats.week_delta_seconds, 9000);
+        assert_eq!(stats.current_streak, 2);
+        assert_eq!(stats.best_streak, 2);
+        assert_eq!(stats.last_7_days.len(), 7);
     }
 }
